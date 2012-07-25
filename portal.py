@@ -44,7 +44,10 @@ class Portal:
             return self.isPassableNow() and self.admits(traveler)
 
         def getDest(self):
-            return destination
+            return self.destination
 
         def getOrig(self):
-            return origin
+            return self.origin
+
+        def touches(self, place):
+                return self.origin is place or self.destination is place

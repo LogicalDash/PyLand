@@ -2,6 +2,7 @@ import place
 import portal
 import thing
 from game import game
+from copy import deepcopy
 
 levels = {} # A dictionary of Level objects, with their names as keys.
 curLevel = None
@@ -15,12 +16,52 @@ def getLevel():
 def gotoLevel(name):
     curLevel = levels[name]
 
+class PortalTree:
+    children = []
+    portal = None
+    places = []
+
+    def __init__(self, portal):
+        self.portal = portal
+        self.places.append(portal.origin)
+        self.places.append(portal.destination)
+    def append(self, portal):
+        if self.portal is None:
+            self.portal = portal
+            self.places.append(portal.origin)
+            self.places.append(portal.destination)
+        else:
+            self.children.append(PortalTree(portal))
+    def getOrig(self):
+        return self.portal.origin
+    def getDest(self):
+        return self.portal.destination
+    def getPlacesInTreeCore(self, placesInTree):
+        placesInTree.append(self.getOrig())
+        placesInTree.append(self.getDest())
+        for child in self.children:
+            child.getPlacesInTreeCore(placesInTree)
+    def getPlacesInTree(self):
+        placesInTree = []
+        self.getPlacesInTreeCore(placesInTree)
+        return placesInTree
+    def isDone(self, allPlaces):
+        for place in allPlaces:
+            if place not in self.places:
+                return False
+        return True
+    def touchesPortal(self, portal):
+        return self.touchesPlace(portal.origin) \
+            or self.touchesPlace(portal.destination)
+    def touchesPlace(self, place):
+        return place in self.places
+
 class Level:
     places = {} # A dictionary of Place objects, with their names as keys.
     portals = []
-    mst = [] # Actually just a list of Place objects, but selected
-             # such that they comprise the minimum spanning tree for
-             # the level.
+    mst = None # Actually just a list of Portal objects, but selected
+               # such that they comprise the minimum spanning tree for
+               # the level.
     name = None
 
     def __init__(self, name, places, portals, mst):
@@ -32,9 +73,10 @@ class Level:
     def loadFromFile(levelfile):
         '''Loads a VectorWorld map. Returns True on success, False on
         failure.'''
-        if levelfile is None:
+        try:
+            line = levelfile.readline()
+        except:
             return False
-        line = levelfile.readline()
         if line != 'level for VectorWorld version ' + game.version:
             return False
         while(line != ''):
@@ -88,4 +130,37 @@ class Level:
             portals.append(Portal(orig,dest,things[tok[3]],int(tok[4])))
 
     def getmst(self):
-        return mst
+        mstContainsAll = True
+        for portal in self.portals:
+            if portal not in self.mst:
+                mstContainsAll = False
+                break
+        if mstContainsAll:
+            return self.mst
+        else:
+            self.makemst()
+            return self.mst
+
+    def makemstStartFrom(self, portal):
+        del self.mst
+        self.mst = PortalTree()
+        if self.portals is []:
+            return
+        candidates = deepcopy(portals)
+        assert(portal in candidates)
+        self.mst.append(portal)
+        candidates.remove(portal)
+        while not self.mst.isDone(self.places.values):
+            neighbors = []
+            for portal in candidates:
+                if self.mst.touchesPortal(portal):
+                    neighbors.append(portal)
+            lightest = neighbors[0]
+            for portal in neighbors[1:]:
+                if portal.getWeight() < lightest.getWeight():
+                    lightest = portal
+            self.mst.append(lightest)
+            candidates.remove(lightest)
+
+    def makemst(self):
+        self.makemstStartFrom(self.portals[0])
