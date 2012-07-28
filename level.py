@@ -16,52 +16,13 @@ def getLevel():
 def gotoLevel(name):
     curLevel = levels[name]
 
-class PortalTree:
-    children = []
-    portal = None
-    places = []
 
-    def __init__(self, portal):
-        self.portal = portal
-        self.places.append(portal.origin)
-        self.places.append(portal.destination)
-    def append(self, portal):
-        if self.portal is None:
-            self.portal = portal
-            self.places.append(portal.origin)
-            self.places.append(portal.destination)
-        else:
-            self.children.append(PortalTree(portal))
-    def getOrig(self):
-        return self.portal.origin
-    def getDest(self):
-        return self.portal.destination
-    def getPlacesInTreeCore(self, placesInTree):
-        placesInTree.append(self.getOrig())
-        placesInTree.append(self.getDest())
-        for child in self.children:
-            child.getPlacesInTreeCore(placesInTree)
-    def getPlacesInTree(self):
-        placesInTree = []
-        self.getPlacesInTreeCore(placesInTree)
-        return placesInTree
-    def isDone(self, allPlaces):
-        for place in allPlaces:
-            if place not in self.places:
-                return False
-        return True
-    def touchesPortal(self, portal):
-        return self.touchesPlace(portal.origin) \
-            or self.touchesPlace(portal.destination)
-    def touchesPlace(self, place):
-        return place in self.places
+        
 
 class Level:
     places = {} # A dictionary of Place objects, with their names as keys.
     portals = []
-    mst = None # Actually just a list of Portal objects, but selected
-               # such that they comprise the minimum spanning tree for
-               # the level.
+    mst = None # minimum spanning tree
     name = None
 
     def __init__(self, name, places, portals, mst):

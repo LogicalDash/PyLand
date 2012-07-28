@@ -1,4 +1,5 @@
 import thing
 
 class Place:
-    pass
+    portals = []
+    contents = []
