@@ -1,21 +1,22 @@
 import sys
 import os
 import pyglet
-import windowframe
-import gamestate
-import gameframe
+import window
+import state
+import frame
 import graphics
 
 class Game:
-    levelfile = file(sys.argv[1], "r")
+    levelfile = "level.txt"
+    imagesfile = "images.conf"
     version = 0
     def __init__(self):
-        graphics.loadSprites()
-        gamestate.init()
-        gamestate.loadLevel(self.levelfile)
-        gameframe.init()
-        windowframe.init()
+        if(len(sys.argv)>1):
+            self.levelfile = sys.argv[1]
+        self.state = state.GameState(self.levelfile)
+        self.graphics = graphics.GameGraphics(self.imagesfile)
+        self.frame = frame.GameFrame(self.graphics, self.state)
+        self.win = window.GameWindow(self.frame)
 
-        pyglet.app.run()
 
 Game()

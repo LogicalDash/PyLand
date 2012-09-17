@@ -1,22 +1,32 @@
 import place
 import portal
 import thing
-from game import game
 from copy import deepcopy
 
 levels = {} # A dictionary of Level objects, with their names as keys.
-curLevel = None
 
-def getLevel(name):
-    return levels[name]
-
-def getLevel():
-    return curLevel
-
-def gotoLevel(name):
-    curLevel = levels[name]
-
-
+def loadFromFile(levelfile):
+    '''Loads a PyLand map. Returns True on success, False on
+    failure.'''
+    try:
+        line = levelfile.readline()
+    except:
+        return False
+    if line != 'level for PyLand version ' + game.version:
+        return False
+    while(line != ''):
+        line = levelfile.readline()
+        token = line.split(" ")
+        if token[0] == 'place':
+            handlePlaceTokens(token)
+        elif token[0] == 'portal':
+            handlePortalTokens(token)
+        elif token[0] =='name':
+            self.name = token[1]
+        else:
+            print "Unreadable level line: " + line
+        if(None not in [name, places, portals]):
+            levels[name] = Level(name,places,portals)
         
 
 class Level:
@@ -25,34 +35,13 @@ class Level:
     mst = None # minimum spanning tree
     name = None
 
-    def __init__(self, name, places, portals, mst):
+    def __init__(self, name, places, portals):
         self.name = name
         self.places = places
         self.portals = portals
-        self.mst = mst
+        self.makemst()
 
-    def loadFromFile(levelfile):
-        '''Loads a VectorWorld map. Returns True on success, False on
-        failure.'''
-        try:
-            line = levelfile.readline()
-        except:
-            return False
-        if line != 'level for VectorWorld version ' + game.version:
-            return False
-        while(line != ''):
-            line = levelfile.readline()
-            token = line.split(" ")
-            if token[0] == 'place':
-                handlePlaceTokens(token)
-            elif token[0] == 'portal':
-                handlePortalTokens(token)
-            elif token[0] =='name':
-                self.name = token[1]
-            else:
-                print "Unreadable level line: " + line
-        if(name is not None):
-            levels[name] = Level(name,places,portals,mst)
+
 
     def handlePlaceTokens(self, tok):
         # When first declared, places have names and very little else.

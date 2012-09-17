@@ -23,33 +23,33 @@ class Portal:
     avatar = None
     destination = None
     origin = None
- def __init__(self, origin, destination, avatar=None, weight=0):
-     self.weight = weight
-     self.avatar = avatar
-     self.destination = destination
-     self.origin = origin
+def __init__(self, origin, destination, avatar=None, weight=0):
+    self.weight = weight
+    self.avatar = avatar
+    self.destination = destination
+    self.origin = origin
     
-     def getWeight(self):
-         return weight
-     def getAvatar(self):
+    def getWeight(self):
+        return weight
+    def getAvatar(self):
         return avatar
-     def isPassableNow(self):
-         return True
-     def admits(self, traveler):
-         return True
-     def isPassableBy(self, traveler):
-         return self.isPassableNow() and self.admits(traveler)
-     def getDest(self):
-         return self.destination
-     def getOrig(self):
-         return self.origin
-     def getEnds(self):
-         return [self.origin, self.destination]
-     def touches(self, place):
-         return self.origin is place or self.destination is place
-     def findNeighboringPortals(self):
-         return self.origin.portals + self.destination.portals
-
+    def isPassableNow(self):
+        return True
+    def admits(self, traveler):
+        return True
+    def isPassableBy(self, traveler):
+        return self.isPassableNow() and self.admits(traveler)
+    def getDest(self):
+        return self.destination
+    def getOrig(self):
+        return self.origin
+    def getEnds(self):
+        return [self.origin, self.destination]
+    def touches(self, place):
+        return self.origin is place or self.destination is place
+    def findNeighboringPortals(self):
+        return self.origin.portals + self.destination.portals
+    
 class PortalTree:
     children = []
 
