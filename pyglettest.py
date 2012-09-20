@@ -1,11 +1,16 @@
 import pyglet, math, threading
 from widgets import *
 from place import Place
+from graphics import load_rltile
 
 window = pyglet.window.Window()
 batch = pyglet.graphics.Batch()
 orb = pyglet.resource.image('orb.png')
-elgolem = pyglet.resource.image('rltiles/dc-mon0/0golem/electric_golem.bmp')
+orbimgd = orb.get_image_data()
+orb_rgba = orbimgd.get_data('RGBA', orbimgd.pitch)
+elgolem = load_rltile('rltiles/dc-mon0/0golem/electric_golem.bmp')
+
+
 
 orb.radius = 8
 
@@ -53,9 +58,15 @@ spotgraph.add_place(myroom,200,50)
 spotgraph.add_place(mybathroom,250,100)
 spotgraph.add_place(guestroom,200,200)
 
-for edge in spotgraph.edges:
-    print "(" + str(edge[0].place) + "->" + str(edge[1].place) + ")"
-pawns = []
+golem = Pawn(momsroom, spotgraph)
+golem.img = elgolem
+
+pawns = [golem]
+
+golem.waypoint(longhall, 0.01)
+golem.waypoint(livingroom, 0.02)
+golem.waypoint(diningarea, 0.03)
+golem.waypoint(kitchen, 0.1)
 
 
 @window.event
@@ -79,6 +90,8 @@ def on_draw():
     batch.draw()
     pyglet.graphics.glFlush()
 
-for pawn in pawns:
-    pyglet.clock.schedule_interval(pawn.move, 1/60.)
+def movepawns(ts):
+    for pawn in pawns:
+        pawn.move(ts)
+pyglet.clock.schedule_interval(movepawns, 1/60.)
 pyglet.app.run()

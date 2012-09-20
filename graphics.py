@@ -1,6 +1,12 @@
 import pyglet
 import unittest
 
+def load_rltile(path):
+    badimg = pyglet.resource.image(path)
+    badimgd = badimg.get_image_data()
+    bad_rgba = badimgd.get_data('RGBA', badimgd.pitch)
+    badimgd.set_data('RGBA', badimgd.pitch, bad_rgba.replace('\xffGll','\x00Gll').replace('\xff.', '\x00.'))
+    return badimgd.get_texture()
 
 class GameGraphics:
     def __init__(self, imgfile):
