@@ -1,104 +1,84 @@
 import pyglet, math, threading
+from widgets import *
+from place import Place
 
 window = pyglet.window.Window()
 batch = pyglet.graphics.Batch()
 orb = pyglet.resource.image('orb.png')
-elgolem = pyglet.resource.image('elgolem.png')
-
-class Mover:
-    testing = False
-    xdir = 1
-    ydir = 1
-    trip_completion = 0.0
-    def __init__(self, start, route, graph, speed):
-        self.x = start[0]
-        self.y = start[1]
-        self.route = route
-        self.speed = speed
-        self.step = 0
-        self.graph = graph
-    def curstep(self):
-        if self.step >= len(self.route):
-            return None
-        else:
-            return self.route[self.step]
-    def nextnode(self):
-        if self.step >= len(self.route):
-            return None
-        else:
-            return self.graph[self.curstep()[1]]
-    def prevnode(self):
-        if self.step >= len(self.route):
-            return self.graph[self.route[-1][1]]
-        else:
-            return self.graph[self.curstep()[0]]
-    def move(self, ts):
-        dest = self.nextnode()
-        if dest is None:
-            return
-        dest_x = dest[0]
-        dest_y = dest[1]
-        orig = self.prevnode()
-        orig_x = orig[0]
-        orig_y = orig[1]
-        rise = dest_y - orig_y
-        if rise > 0:
-            self.ydir = 1
-        elif rise == 0:
-            self.ydir = 0
-        elif rise < 0:
-            self.ydir = -1
-        run = dest_x - orig_x
-        if run > 0:
-            self.xdir = 1
-        elif run == 0:
-            self.xdir = 0
-        elif run < 0:
-            self.xdir = -1
-
-        # Progress along roads is considered as a proportion of the
-        # total length of the road. Right now I haven't got roads of
-        # different lengths.
-        x_total = float(dest_x - orig_x)
-        y_total = float(dest_y - orig_y)
-        self.trip_completion += self.speed
-        if self.trip_completion >= 1.0:
-            self.trip_completion = 0.0
-            self.step += 1
-            self.x = dest_x
-            self.y = dest_y
-            return
-        x_traveled = x_total * self.trip_completion
-        y_traveled = y_total * self.trip_completion
-        self.x = orig_x + x_traveled
-        self.y = orig_y + y_traveled
-            
-        
-        
-
-orbcoords = [(50, 100),(150, 200),(200,150),(300,300),(150,150)]
-orbconnex = [(0,1),(3,4),(2,0),(2,3)]
-golem = Mover(orbcoords[0], [(0,2),(2,3),(3,4)], orbcoords, 0.01)
-golem.testing = True
+elgolem = pyglet.resource.image('rltiles/dc-mon0/0golem/electric_golem.bmp')
 
 orb.radius = 8
+
+myroom = Place("My Room")
+livingroom = Place("Living Room")
+diningarea = Place("Dining Area")
+kitchen = Place("Kitchen")
+longhall = Place("Long Hall")
+guestroom = Place("Guest Room")
+mybathroom = Place("My Bathroom")
+momsbathroom = Place("Mom's Bathroom")
+momsroom = Place("Mom's Room")
+
+myroom.connect_to(livingroom)
+myroom.connect_to(mybathroom)
+myroom.connect_to(guestroom)
+livingroom.connect_to(myroom)
+livingroom.connect_to(diningarea)
+livingroom.connect_to(longhall)
+mybathroom.connect_to(myroom)
+mybathroom.connect_to(guestroom)
+mybathroom.connect_to(livingroom)
+guestroom.connect_to(livingroom)
+guestroom.connect_to(myroom)
+guestroom.connect_to(mybathroom)
+diningarea.connect_to(kitchen)
+diningarea.connect_to(livingroom)
+longhall.connect_to(livingroom)
+longhall.connect_to(momsroom)
+longhall.connect_to(momsbathroom)
+momsroom.connect_to(momsbathroom)
+momsroom.connect_to(longhall)
+momsbathroom.connect_to(longhall)
+momsbathroom.connect_to(momsroom)
+
+
+spotgraph = SpotGraph()
+spotgraph.add_place(momsroom,50,50)
+spotgraph.add_place(momsbathroom,50, 100)
+spotgraph.add_place(longhall, 100, 100)
+spotgraph.add_place(livingroom, 150, 50)
+spotgraph.add_place(diningarea, 150, 200)
+spotgraph.add_place(kitchen, 100, 200)
+spotgraph.add_place(myroom,200,50)
+spotgraph.add_place(mybathroom,250,100)
+spotgraph.add_place(guestroom,200,200)
+
+for edge in spotgraph.edges:
+    print "(" + str(edge[0].place) + "->" + str(edge[1].place) + ")"
+pawns = []
+
 
 @window.event
 def on_draw():
     window.clear()
     window.sprites = []
-    for coord in orbcoords:
-        window.sprites.append(pyglet.sprite.Sprite(orb, x = (coord[0] - orb.radius), y = (coord[1] - orb.radius), batch=batch))
+    gl_lines_to_draw = []
 
-    window.sprites.append(pyglet.sprite.Sprite(elgolem, x = golem.x, y = golem.y, batch=batch))
-        
-    for connect in orbconnex:
-        orb0 = orbcoords[connect[0]]
-        orb1= orbcoords[connect[1]]
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (orb0[0], orb0[1], orb1[0], orb1[1])))
+    for edge_to_draw in spotgraph.edges_to_draw:
+        gl_lines_to_draw.append(('v2i', edge_to_draw))
+
+    for spot in spotgraph.spots:
+        window.sprites.append(pyglet.sprite.Sprite(orb, x = (spot.x - orb.radius), y = (spot.y - orb.radius), batch = batch))
+
+    for pawn in pawns:
+        window.sprites.append(pyglet.sprite.Sprite(pawn.img, x = pawn.x, y=pawn.y, batch=batch))
+
+    for line in gl_lines_to_draw:
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, line)
         
     batch.draw()
     pyglet.graphics.glFlush()
 
-pyglet.clock.schedule_interval(golem.move, 1/60.)
+for pawn in pawns:
+    pyglet.clock.schedule_interval(pawn.move, 1/60.)
 pyglet.app.run()
