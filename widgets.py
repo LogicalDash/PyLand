@@ -1,4 +1,5 @@
 # This file is for the controllers for the things that show up on the screen when you play.
+from place import Place
 
 class Spot:
     """Controller for the icon that represents a Place.
@@ -82,13 +83,15 @@ class Pawn:
     step = 0
     route = None
     def __init__(self, start, spotgraph):
+        self.spotgraph = spotgraph
         if isinstance(start, Spot):
             self.curspot = start
+            self.x = start.x
+            self.y = start.y
         elif isinstance(start, Place):
-            self.curspot = spotgraph.places[start]
-        self.x = start[0]
-        self.y = start[1]
-        self.spotgraph = spotgraph
+            self.curspot = self.spotgraph.places[start]
+            self.x = self.curspot.x
+            self.y = self.curspot.y
     def curstep(self):
         if self.step >= len(self.route):
             return None
@@ -130,6 +133,21 @@ class Pawn:
         y_traveled = y_total * self.trip_completion
         self.x = orig.x + x_traveled
         self.y = orig.y + y_traveled
+    def waypoint(self, dest, speed):
+        if self.route is None:
+            if isinstance(dest, Spot):
+                self.route = [(dest, speed)]
+            elif dest in self.spotgraph.places.keys():
+                self.route = [(self.spotgraph.places[dest],speed)]
+            else:
+                return
+        else:
+            if isinstance(dest, Spot):
+                self.route.append((dest, speed))
+            elif dest in self.spotgraph.places.keys():
+                self.route.append((self.spotgraph.places[dest], speed))
+            else:
+                return
     def cancel_route(self):
         """Canceling the route will let the Pawn reach the next node
         before stopping to await a new waypoint. If you want it
