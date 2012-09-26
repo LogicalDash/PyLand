@@ -6,10 +6,8 @@ from graphics import load_rltile
 window = pyglet.window.Window()
 batch = pyglet.graphics.Batch()
 orb = pyglet.resource.image('orb.png')
-orbimgd = orb.get_image_data()
-orb_rgba = orbimgd.get_data('RGBA', orbimgd.pitch)
 elgolem = load_rltile('rltiles/dc-mon0/0golem/electric_golem.bmp')
-
+efreetimg = load_rltile('rltiles/dc-mon1/e/efreet.bmp')
 
 
 orb.radius = 8
@@ -61,37 +59,56 @@ spotgraph.add_place(guestroom,200,200)
 golem = Pawn(momsroom, spotgraph)
 golem.img = elgolem
 
-pawns = [golem]
+efreet = Pawn(myroom, spotgraph)
+efreet.img = efreetimg
+
+pawns = [golem, efreet]
 
 golem.waypoint(longhall, 0.01)
 golem.waypoint(livingroom, 0.02)
 golem.waypoint(diningarea, 0.03)
 golem.waypoint(kitchen, 0.1)
 
+for place in [mybathroom, myroom, livingroom, longhall, momsbathroom]:
+    efreet.waypoint(place, 0.02)
+
+def noop():
+    pass
+
+menu = Menu(0,0,200,400,Color(44,44,44,11),Color(200,200,200),"DejaVu Sans",10)
+
+for word in ["Hi", "there", "you", "cool", "guy"]:
+    menu.add_item(word, 1, noop)
+
 
 @window.event
 def on_draw():
     window.clear()
-    window.sprites = []
-    gl_lines_to_draw = []
+    batch = pyglet.graphics.Batch()
+    edgegroup = pyglet.graphics.OrderedGroup(0)
+    orbgroup = pyglet.graphics.OrderedGroup(1)
+    spritegroup = pyglet.graphics.OrderedGroup(2)
+    menugroup = pyglet.graphics.OrderedGroup(3)
+    labelgroup = pyglet.graphics.OrderedGroup(4)
+    sprites = []
+
+    menu.addtobatch(batch, menugroup, labelgroup)
 
     for edge_to_draw in spotgraph.edges_to_draw:
-        gl_lines_to_draw.append(('v2i', edge_to_draw))
+        batch.add(2, pyglet.gl.GL_LINES, edgegroup, ('v2i', edge_to_draw))
 
     for spot in spotgraph.spots:
-        window.sprites.append(pyglet.sprite.Sprite(orb, x = (spot.x - orb.radius), y = (spot.y - orb.radius), batch = batch))
+        sprites.append(pyglet.sprite.Sprite(orb, x = (spot.x - orb.radius), y = (spot.y - orb.radius), batch = batch, group=orbgroup))
 
     for pawn in pawns:
-        window.sprites.append(pyglet.sprite.Sprite(pawn.img, x = pawn.x, y=pawn.y, batch=batch))
+        sprites.append(pyglet.sprite.Sprite(pawn.img, x = pawn.x, y=pawn.y, batch=batch, group=spritegroup))
 
-    for line in gl_lines_to_draw:
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, line)
         
     batch.draw()
     pyglet.graphics.glFlush()
 
 def movepawns(ts):
     for pawn in pawns:
-        pawn.move(ts)
+        pawn.move()
 pyglet.clock.schedule_interval(movepawns, 1/60.)
 pyglet.app.run()
