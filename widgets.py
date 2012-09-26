@@ -54,7 +54,6 @@ class MenuItem:
         else:
             self.img = None
     def getlabel(self, x, y, fontface, fontsize, batch, group):
-        print "MenuItem.getlabel(%i, %i, %s, %i, batch, group)" % (x, y, fontface, fontsize)
         return pyglet.text.Label(self.text, fontface, fontsize, x=x, y=y, batch=batch, group=group,
                                  anchor_x='left', anchor_y='top')
 
@@ -133,8 +132,6 @@ class Menu:
         while items_height < self.getheight() and len(self.items) > draw_until:
             items_height += self.item_height(draw_until) + spacing
             draw_until += 1
-        print "items_height == %i" % items_height
-        print "draw_until == %i" % draw_until
         draw_at = self.gettop()
         i = start
         drawn = []

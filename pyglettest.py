@@ -75,11 +75,16 @@ for place in [mybathroom, myroom, livingroom, longhall, momsbathroom]:
 def noop():
     pass
 
-menu = Menu(0,0,200,400,Color(44,44,44,11),Color(200,200,200),"DejaVu Sans",10)
+menu = Menu(0,0,200,400,Color(44,44,44,128),Color(200,200,200),"DejaVu Sans",10)
 
 for word in ["Hi", "there", "you", "cool", "guy"]:
     menu.add_item(word, 1, noop)
 
+class TextureEnableOrderedGroup(pyglet.graphics.OrderedGroup):
+    def set_state(self):
+        pyglet.gl.glEnable(pyglet.gl.GL_BLEND)
+    def unset_state(self):
+        pyglet.gl.glDisable(pyglet.gl.GL_BLEND)
 
 @window.event
 def on_draw():
@@ -88,14 +93,14 @@ def on_draw():
     edgegroup = pyglet.graphics.OrderedGroup(0)
     orbgroup = pyglet.graphics.OrderedGroup(1)
     spritegroup = pyglet.graphics.OrderedGroup(2)
-    menugroup = pyglet.graphics.OrderedGroup(3)
+    menugroup = TextureEnableOrderedGroup(3)
     labelgroup = pyglet.graphics.OrderedGroup(4)
     sprites = []
 
     menu.addtobatch(batch, menugroup, labelgroup)
 
     for edge_to_draw in spotgraph.edges_to_draw:
-        batch.add(2, pyglet.gl.GL_LINES, edgegroup, ('v2i', edge_to_draw))
+        batch.add(2, pyglet.gl.GL_LINES, edgegroup, ('v2i', edge_to_draw), ('c3B', (255, 255, 255)*2))
 
     for spot in spotgraph.spots:
         sprites.append(pyglet.sprite.Sprite(orb, x = (spot.x - orb.radius), y = (spot.y - orb.radius), batch = batch, group=orbgroup))
