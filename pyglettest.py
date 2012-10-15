@@ -56,11 +56,11 @@ spotgraph.add_place(myroom,200,50)
 spotgraph.add_place(mybathroom,250,100)
 spotgraph.add_place(guestroom,200,200)
 
-golem = Pawn(momsroom, spotgraph)
-golem.img = elgolem
+golem = Pawn(momsroom, spotgraph, elgolem)
 
-efreet = Pawn(myroom, spotgraph)
-efreet.img = efreetimg
+
+efreet = Pawn(myroom, spotgraph, efreetimg)
+
 
 pawns = [golem, efreet]
 
@@ -73,47 +73,54 @@ for place in [mybathroom, myroom, livingroom, longhall, momsbathroom]:
     efreet.waypoint(place, 0.02)
 
 def noop():
-    pass
+    print "NOPE"
 
-menu = Menu(0,0,200,400,Color(44,44,44,128),Color(200,200,200),"DejaVu Sans",10)
+menu = Menu(0, 200, 100, 200, Color(44,44,44,128), Color(200,200,200),
+            Color(255,255,0), "DejaVu Sans", 10, window)
 
 for word in ["Hi", "there", "you", "cool", "guy"]:
     menu.add_item(word, 1, noop)
 
-class TextureEnableOrderedGroup(pyglet.graphics.OrderedGroup):
-    def set_state(self):
-        pyglet.gl.glEnable(pyglet.gl.GL_BLEND)
-    def unset_state(self):
-        pyglet.gl.glDisable(pyglet.gl.GL_BLEND)
+def add_edges_to_batch(edges, batch, group):
+    # Each vertex of each edge should have a corresponding color vertex.
+    # Each edge should be paired with the color vertices of both its own vertices.
+    for item in edges:
+        edge = item[0]
+        color = item[1]
+        batch.add(2, pyglet.gl.GL_LINES, group, ('v2i', edge), ('c4B', color))
 
-@window.event
+def add_sprites_to_batch(spritelist, batch, group):
+    # Each item in spritelist should be a tuple of the form
+    # (img, x, y)
+    return [pyglet.sprite.Sprite(img, x=x, y=y, batch=batch, group=group) for (img, x, y) in spritelist]
+
+@window.event    
 def on_draw():
     window.clear()
     batch = pyglet.graphics.Batch()
+
     edgegroup = pyglet.graphics.OrderedGroup(0)
     orbgroup = pyglet.graphics.OrderedGroup(1)
-    spritegroup = pyglet.graphics.OrderedGroup(2)
-    menugroup = TextureEnableOrderedGroup(3)
+    pawngroup = pyglet.graphics.OrderedGroup(2)
+    menugroup = pyglet.graphics.OrderedGroup(3)
     labelgroup = pyglet.graphics.OrderedGroup(4)
-    sprites = []
+
+    add_edges_to_batch(spotgraph.edges_to_draw, batch, edgegroup)
+
+    spotsprites = add_sprites_to_batch([(orb, spot.getleft(), spot.getbot()) for spot in spotgraph.spots], batch, orbgroup)
+    
+    pawnsprites = add_sprites_to_batch([tuple(pawn) for pawn in pawns], batch, pawngroup)
 
     menu.addtobatch(batch, menugroup, labelgroup)
-
-    for edge_to_draw in spotgraph.edges_to_draw:
-        batch.add(2, pyglet.gl.GL_LINES, edgegroup, ('v2i', edge_to_draw), ('c3B', (255, 255, 255)*2))
-
-    for spot in spotgraph.spots:
-        sprites.append(pyglet.sprite.Sprite(orb, x = (spot.x - orb.radius), y = (spot.y - orb.radius), batch = batch, group=orbgroup))
-
-    for pawn in pawns:
-        sprites.append(pyglet.sprite.Sprite(pawn.img, x = pawn.x, y=pawn.y, batch=batch, group=spritegroup))
-
-        
+    
     batch.draw()
     pyglet.graphics.glFlush()
 
-def movepawns(ts):
-    for pawn in pawns:
-        pawn.move()
-pyglet.clock.schedule_interval(movepawns, 1/60.)
+mouse_listeners = [menu]
+
+for listener in mouse_listeners:
+    listener.register(window)
+    
+pt = PawnTimer(pawns)
+pyglet.clock.schedule_interval(pt.movepawns, 1/60., 1/60.)
 pyglet.app.run()
