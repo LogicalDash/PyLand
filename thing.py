@@ -1,17 +1,14 @@
 import place
 import level
 
-things = {}
-
 class Thing:
     loc = None
-    def __init__(self, name, desc='', loc=None):
+    def __init__(self, name, desc='', loc=None, attributes=[]):
         self.name = name
         self.desc = desc
+        self.attributes = attributes
         if loc is not None:
             if issubclass(loc, place.Place):
                 self.loc = loc
-            else:
-                assert(type(loc) == str)
+            elif type(loc) is str:
                 self.loc = level.getLevel().places[loc]
-        things[name] = self
