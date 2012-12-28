@@ -21,10 +21,10 @@ c.execute('create table thing (name, foreign key(name) references item(name)')
 c.execute('create table portal (from_place, to_place, weight default 0, foreign key(from_place) references place(name), foreign key(to_place) references place(name), check(from_place<>to_place))') 
 c.execute('create table containment (contained, container, foreign key(contained) references item(name), foreign key(container) references item(name), check(contained<>container))') 
 c.execute('create table spot (place, x, y, r, spotgraph, foreign key(place) references place(name))')
-c.execute('create table attribute (name, foreign key(name) references item(name))')
+c.execute('create table attribute (name primary key)')
 c.execute('create table attribution (attribute, attributed_to, value, foreign key(attribute) references attribute(name), foreign key(attributed_to) references item(name))') 
 c.execute('create table permitted_values (attribute, value, foreign key(attribute) references attribute(name))') 
-def mkplace(name=None, x_default=None, y_default=None, portals=[], contents=[], attributes=[]):
+def mkplace(name, portals=[], contents=[], attributes=[], x_default=None, y_default=None):
     c.execute('insert into place values (?)', name)
     for portal in portals:
         if type(portal) is type(''):
@@ -51,21 +51,11 @@ def mkplace(name=None, x_default=None, y_default=None, portals=[], contents=[], 
 
         c.execute('insert into portal values(?,?)', (orig, dest))
     for item in contents:
-        # If it's an integer, assume it's a rowid
-        if type(item) == type(1):
-            iid = item
-        else:
-            # Otherwise, it's a Thing
-            iid = item.rowid
-        c.execute('insert into containment values (?,?)',(iid,pid))
+        c.execute('insert into containment values (?,?)',(item,name))
     for atr in attributes:
-        if type(atr) == type(1):
-            aid = atr
-        else:
-            aid = atr.rowid
-        c.execute('insert into attribution values (?,?)', (aid, pid))
+        c.execute('insert into attribution values (?,?)', (atr,name))
     if None not in [x_default, y_default]:
-        c.execute('insert into spot values (?, ?, ?)', (pid, x_default, y_default))
+        c.execute('insert into spot values (?, ?, ?)', (name, x_default, y_default))
 def getplace(name):
     c.execute('select * from place where name=?', name)
     firstrow = c.fetchone()
@@ -73,10 +63,6 @@ def getplace(name):
         # no such place
         return None
     name = firstrow[0]
-    pid = c.lastrowid
-    if loaded_place.has_key(pid):
-        # no need to load it again, now
-        return loaded_place[pid]
     c.execute('select * from portal where from_place=?', pid)
     portals = [port[1] for port in c]
     c.execute('select * from containment where container=?', pid)
@@ -85,10 +71,6 @@ def getplace(name):
     spot = c.fetchone()
     p = Place(name) # I think I might have to handle nulls special
     p.rowid = pid
-    loaded_place[pid] = p # must do this now, though the place is not
-                          # finished yet, lest the recursive call
-                          # below fail ever to happen upon a loaded
-                          # place
     for port in portals:
         dest = getplace(port)
         if dest is not None:
@@ -103,13 +85,31 @@ def getplace(name):
                           # tuple of place and spot.
     return p
 def mkthing(name, loc, atts):
-    pass
+    c.execute('insert into item values (?)', (name))
+    c.execute('insert into thing values (?)', (name))
+    attfmt = ','.join(['(?, ?, ?)' for att in atts])
+    attval = []
+    for att in atts:
+        attval.append(att[0])
+        attval.append(name)
+        attval.append(att[1])
+    c.execute('insert into attribution values ' + attfmt, attval)
+    # Only then do I add the thing to a location, because it's
+    # possible the location has some restrictions that will deny this
+    # thing entry, because of its attributes.
+    c.execute('insert into containment values (?, ?)', (loc, name))
 def mkattribute(name, permitted_vals=[]):
-    pass
-def attributed(aid, iid):
-    c.execute('select * from attribution where attribute=? and attributed_to=?',(aid,iid))
+    c.execute('insert into attribute values (?)', name)
+    valfmt = ','.join(['(?, ?)' for val in permitted_vals])
+    valval = []
+    for val in permitted_vals:
+        valval.append(name)
+        valval.append(val)
+    c.execute('insert into permitted_values values ' + valfmt, valval)
+def attributed(attr, item):
+    c.execute('select * from attribution where attribute=? and attributed_to=?',(attr, item))
     return c.fetchone() is not None
-def attribute_to(aid, iid, val):
+def attribute(attr, item, val):
     if not attributed(aid, iid) and val_permitted(aid, val):
         c.execute('insert into attribution values (?, ?, ?)', (aid, iid, val))
 def val_permitted(aid, val):
@@ -133,7 +133,7 @@ def getthing(it):
     th = Thing(loc, atts)
     th.rowid = tid
     return th
-def attributes_of(tid):
+def getattributes(tid):
     c.execute('select attribute, value from attributions where attributed_to=?', tid)
     return [row for row in c]
 def attribute_dict(tid):
@@ -152,10 +152,10 @@ def getattribute(name):
     att = Attribute(name, vl)
     att.rowid = aid
     return att
-def is_contained_by(item, place):
+def is_in(item, place):
     c.execute('select * from containment where cointained=? and container=?', (item, place))
     return c.fetchone() is not None
-def thing_loc(thing):
+def whereis(thing):
     c.execute('select container from containment where contained=?', thing)
     r = c.fetchone()
     if r is not None:
@@ -184,7 +184,7 @@ def remove_item(thing, container):
 def delthing(thing):
     c.execute('delete from containment where contained=?', thing)
     c.execute('delete from thing where rowid=?', thing)
-def portal_connecting(orig, dest):
+def portal_exists(orig, dest):
     c.execute('select * from portal where orig=? and dest=?', (orig, dest))
     return c.fetchone() is not None
 def mkportal(orig, dest):

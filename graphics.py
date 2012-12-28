@@ -10,13 +10,16 @@ def load_rltile(path):
 
 class GameGraphics:
     def __init__(self, imgfile):
-        self.spriteInventory = {}
+        self.sprite_inventory = {}
         self.imgfile = imgfile
 
-    def getSprite(spriten):
-        return spriteInventory[spriten]
+    def getSprite(self, spriten):
+        if self.sprite_inventory.has_key(spriten):
+            return self.sprite_inventory[spriten]
+        else:
+            self.sprite_inventory[spriten] = pyglet.resource.image(spriten)
 
-    def loadSprites():
+    def loadSprites(self):
         imgconf = open(self.imgfile, 'r')
         line = imgconf.readline()
         tokens = []
@@ -31,12 +34,17 @@ class GameGraphics:
             except:
                 print "Not an image: " + tokens[1]
                 break
-            spriteInventory[tokens[0]] = image
+            sprite_inventory[tokens[0]] = image
             line = imgconf.readline()
 
             imgconf.close()
 
+g = GameGraphics("images.conf")
+
+def image(imgn):
+    return g.getSprite(imgn)
+
 class GraphicTestCase(unittest.TestCase):
     def testImageClass(self):
-        for img in spriteInventory.values():
+        for img in sprite_inventory.values():
             self.assertIsInstance(img, pyglet.image.TextureRegion)
