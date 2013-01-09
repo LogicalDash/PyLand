@@ -2,6 +2,7 @@
 import pyglet
 from place import Place
 from math import floor, sqrt
+from uuid import uuid4
 
 def point_is_in(x, y, listener): return x >= listener.getleft() and x \
     <= listener.getright() and y >= listener.getbot() and y <= \
@@ -208,12 +209,30 @@ class MenuList:
                 self.sorted = True
             return self.items[i]
         else:
+<<<<<<< HEAD
             return self.nmap[i]
     def __len__(self):
         return len(self.items)
     def index(self, thingus):
         return self.items.index(thingus)
     def add_item(self, name, ct, onclick, img):
+=======
+            self.nmap.pop(value.text)
+            self.items.remove(value)
+    def reverse(self):
+        self.items.reverse()
+        return self
+    def sort(self):
+        # This just sorts by item name. I may want to make it sort by quantity eventually.
+        if not self.sorted:
+            self.items.sort()
+            self.sorted = True
+            return True # I did in fact sort
+        else:
+            return False # no I didn't
+
+    def add_item(self, name, onclick, ct=None):
+>>>>>>> bf4e7d430ded49df77106f136e98448decf831de
         if name in [item.text for item in self.items]:
             return None
         else:
@@ -358,10 +377,15 @@ class Spot:
         return iter([self.img, self.getleft(), self.getbot()])
 
 class SpotGraph:
-    places = {}
-    spots = []
-    edges = []
-    edges_to_draw = []
+    def __init__(self, name=None, places={}, spots=[], edges=[]):
+        if name is None:
+            self.name = str(uuid4())
+        else:
+            self.name = name
+        self.places = places
+        self.spots = spots
+        self.edges = edges
+        self.edges_to_draw = []
     def add_spot(self, spot):
         self.spots.append(spot)
         self.places[spot.place] = spot
