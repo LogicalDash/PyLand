@@ -75,13 +75,11 @@ for place in [mybathroom, myroom, livingroom, longhall, momsbathroom]:
 def noop():
     print "NOPE"
 
-menu = Menu(window, 0, 33, 100, 200, solarized_dark_scheme, "DejaVu Sans", 16)
+menu = Menu(0, 200, 100, 200, Color(44,44,44,128), Color(200,200,200),
+            Color(255,255,0), "DejaVu Sans", 10, window)
 
 for word in ["Hi", "there", "you", "cool", "guy"]:
-    menu.add_item(word, noop, 1)
-
-bar = MenuBar(window, 32, solarized_dark_scheme, "DejaVu Sans", 16)
-bar.add_menu("File")
+    menu.add_item(word, 1, noop)
 
 def add_edges_to_batch(edges, batch, group):
     # Each vertex of each edge should have a corresponding color vertex.
@@ -96,47 +94,33 @@ def add_sprites_to_batch(spritelist, batch, group):
     # (img, x, y)
     return [pyglet.sprite.Sprite(img, x=x, y=y, batch=batch, group=group) for (img, x, y) in spritelist]
 
-class MenuOrderedGroup(pyglet.graphics.OrderedGroup):
-    def set_state(self):
-        pyglet.gl.glEnable(pyglet.gl.GL_BLEND)
-        pyglet.gl.glEnable(pyglet.gl.GL_TEXTURE_2D)
-    def unset_state(self):
-        pyglet.gl.glDisable(pyglet.gl.GL_BLEND)
-        pyglet.gl.glDisable(pyglet.gl.GL_TEXTURE_2D)
-
-@window.event
+@window.event    
 def on_draw():
     window.clear()
-
+    batch = pyglet.graphics.Batch()
 
     edgegroup = pyglet.graphics.OrderedGroup(0)
     orbgroup = pyglet.graphics.OrderedGroup(1)
     pawngroup = pyglet.graphics.OrderedGroup(2)
-    menugroup = MenuOrderedGroup(3)
+    menugroup = pyglet.graphics.OrderedGroup(3)
     labelgroup = pyglet.graphics.OrderedGroup(4)
 
     add_edges_to_batch(spotgraph.edges_to_draw, batch, edgegroup)
 
     spotsprites = add_sprites_to_batch([(orb, spot.getleft(), spot.getbot()) for spot in spotgraph.spots], batch, orbgroup)
-
+    
     pawnsprites = add_sprites_to_batch([tuple(pawn) for pawn in pawns], batch, pawngroup)
 
-    bardrawn = bar.addtobatch(batch, menugroup, labelgroup)
-    menudrawn = menu.addtobatch(batch, menugroup, labelgroup)
-
+    menu.addtobatch(batch, menugroup, labelgroup)
+    
     batch.draw()
     pyglet.graphics.glFlush()
-    del spotsprites
-    del pawnsprites
-    del bardrawn
-    del menudrawn
 
 mouse_listeners = [menu]
 
 for listener in mouse_listeners:
     listener.register(window)
-
+    
 pt = PawnTimer(pawns)
 pyglet.clock.schedule_interval(pt.movepawns, 1/60., 1/60.)
-
 pyglet.app.run()

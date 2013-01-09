@@ -1,30 +1,30 @@
 # This file is for the controllers for the things that show up on the screen when you play.
-import pyglet, sys, os
-sys.path.append(os.curdir)
-import graphics
+import pyglet
 from place import Place
 from math import floor, sqrt
 
-class LabelException(Exception):
-    def __init__(self, it):
-        Exception.__init__(self, 'Something went wrong with the label reading "' + it.text + '"')
+def point_is_in(x, y, listener): return x >= listener.getleft() and x \
+    <= listener.getright() and y >= listener.getbot() and y <= \
+    listener.gettop()
+def point_is_between(x, y, x1, y1, x2, y2):
+    return x >= x1 and x <= x2 and y >= y1 and y <= y2
 
 class MouseStruct:
     def __init__(self):
         self.x = 0
         self.y = 0
-        self.dx = 0
+        self.dy = 0
         self.dy = 0
         self.left = False
         self.middle = False
         self.right = False
-
 
 class ModKeyStruct:
     def __init__(self):
         self.shift = False
         self.ctrl = False
         self.meta = False
+
 
 class MouseListener:
     """MouseListener is a mix-in class. It provides basic
@@ -36,24 +36,13 @@ class MouseListener:
     def get_mouse_rel_x(self):
         return self.mouse.x - self.getleft()
     def get_mouse_rel_y(self):
-        return self.mouse.y - self.getbot()
-    def is_button_pressed(self, button):
-        if button is pyglet.window.mouse.LEFT:
-            return self.mouse.left
-        elif button is pyglet.window.mouse.MIDDLE:
-            return self.mouse.middle
-        elif button is pyglet.window.mouse.RIGHT:
-            return self.mouse.right
-        else:
-            return False
+        return self.mouse.y - self.gettop()
+    def get_mouse_offset_x(self):
+        return self.mouse.x - self.x
+    def get_mouse_offset_y(self):
+        return self.mouse.y - self.y
     def is_mouse_in(self):
-        return self.mouse.x >= self.getleft() and \
-          self.mouse.x <= self.getright() and \
-          self.mouse.y >= self.getbot() and \
-          self.mouse.y <= self.gettop
-    def is_being_clicked(self, button=pyglet.window.mouse.LEFT):
-        return self.is_button_pressed(button) and \
-          self.is_mouse_in()
+        return point_is_in(self.mouse.x, self.mouse.y, self)
     def distance_from_mouse(self):
         return sqrt(self.mouse_offset_x()**2 + self.mouse_offset_y()**2)
     def on_mouse_motion(self, x, y, dx, dy):
@@ -98,10 +87,20 @@ class MouseListener:
     def register(self, window):
         self.mouse = MouseStruct()
         self.key = ModKeyStruct()
-        for handler in [self.on_mouse_motion, self.on_mouse_press, self.on_mouse_release, self.on_mouse_drag]:
-            window.push_handlers(handler)
-
-
+        @window.event
+        def on_mouse_motion(x, y, dx, dy):
+            self.on_mouse_motion(x, y, dx, dy)
+        @window.event
+        def on_mouse_press(x, y, button, modifiers):
+            self.on_mouse_press(x, y, button, modifiers)
+        @window.event
+        def on_mouse_release(x, y, button, modifiers):
+            self.on_mouse_release(x, y, button, modifiers)
+        @window.event
+        def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
+            self.on_mouse_drag(x, y, dx, dy, buttons, modifiers)
+    
+        
 class Color:
     """Color(red=0, green=0, blue=0, alpha=255) => color
 
@@ -125,94 +124,21 @@ class Color:
         else:
             return None
 
-def from_hex(h):
-    if type(h) == str:
-        hs = h
-    else:
-        hs = hex(h).replace('0x','').zfill(6)
-    rh = hs[0:2]
-    gh = hs[2:4]
-    bh = hs[4:6]
-    r = int(rh,16)
-    g = int(gh,16)
-    b = int(bh,16)
-    return Color(r, g, b)
-
-white = Color(255,255,255)
-black = Color(0,0,0)
-
-class ColorSet:
-    pass
-
-class SolarizedSet(ColorSet):
-    base03 = from_hex(0x002b36)
-    base02 = from_hex(0x073642)
-    base01 = from_hex(0x586e75)
-    base00 = from_hex(0x657b83)
-    base0 = from_hex(0x839496)
-    base1 = from_hex(0x93a1a1)
-    base2 = from_hex(0xeee8d5)
-    base3 = from_hex(0xfdf6e3)
-    yellow = from_hex(0xb58900)
-    orange = from_hex(0xcb4b16)
-    red = from_hex(0xdc322f)
-    magenta = from_hex(0xd33682)
-    violet = from_hex(0x6c71c4)
-    blue = from_hex(0x268bd2)
-    cyan = from_hex(0x2aa198)
-    green = from_hex(0x859900)
-    bg = ColorSet()
-    fg = ColorSet()
-    bg.dark = base02
-    bg.xdark = base03
-    bg.light = base2
-    bg.xlight = base3
-    fg.dark = base00
-    fg.xdark = base01
-    fg.light = base0
-    fg.xlight = base1
-
-class SolarizedDarkSet(SolarizedSet):
-    fg = ColorSet()
-    bg = ColorSet()
-    fg.inactive = SolarizedSet.fg.dark
-    bg.inactive = SolarizedSet.bg.dark
-    fg.active = SolarizedSet.fg.xdark
-    bg.active = SolarizedSet.bg.xdark
-
-class SolarizedLightSet(SolarizedSet):
-    fg = ColorSet()
-    bg = ColorSet()
-    fg.inactive = SolarizedSet.fg.light
-    bg.inactive = SolarizedSet.bg.light
-    fg.active = SolarizedSet.fg.xlight
-    bg.active = SolarizedSet.bg.xlight
-
-class ColorScheme:
-    def __init__(self, buttons, menus, fields, content):
-        # all the args should be ColorSet class objects
-        self.buttons = buttons
-        self.menus = menus
-        self.fields = fields
-        self.content = content
-
-solarized_dark_scheme = ColorScheme(SolarizedDarkSet, SolarizedDarkSet, SolarizedDarkSet, SolarizedDarkSet)
-
 class Rect:
-    """Rect(x, y, width, height, color, batch=None, group=None) => rect
+    """Rect(x, y, width, height, color) => rect
 
     A rectangle with its lower-left corner at the given x and y. It
-    supports only batch rendering. If you supply a batch in the
-    constructor, I'll add myself to it immediately."""
-    def __init__(self, x, y, width, height, color, batch=None, group=None):
+    supports only batch rendering.
+
+    rect.addtobatch(batch, group=None) => None
+    Call this function to draw the rect."""
+    def __init__(self, x, y, width, height, color):
         self.x = x
         self.y = y
         self.width = width
         self.height = height
         self.color = Color.maybe_to_color(color)
         self.image = pyglet.image.create(width, height, pyglet.image.SolidColorImagePattern(color.tuple))
-        if batch is not None:
-            self.addtobatch(batch, group)
     def gettop(self):
         return self.y + self.height
     def getbot(self):
@@ -223,212 +149,105 @@ class Rect:
         return self.x + self.width
     def addtobatch(self, batch, group=None):
         self.sprite = pyglet.sprite.Sprite(self.image, self.x, self.y, batch=batch, group=group)
-        return self.sprite
-
-class Button(MouseListener):
-    # I'll just use simple rectangular buttons with text on, for now.
-    def __init__(self, window, onclick, x, y, width, height, text, SolarizedDarkSet, fontface="Sans", fontsize=20):
-        self.onclick = onclick
-        self.register(window)
-        self.text = text
-        self.colors = colors
-        self.fontface = fontface
-        self.fontsize = fontsize
-    def addtobatch(self, batch, buttongroup, labelgroup):
-        pass
-    def xcenter(self):
-        return self.rect.x + (self.rect.width / 2)
-    def ycenter(self):
-        return self.rect.y + (self.rect.height / 2)
-    def fgcolor(self):
-        if self.is_being_clicked:
-            return self.colors.fg.active
-        else:
-            return self.colors.fg.inactive
-    def bgcolor(self):
-        if self.is_being_clicked:
-            return self.colors.bg.active
-        else:
-            return self.colors.bg.inactive
-    def getlabel(self, batch, group):
-        return pyglet.text.Label(self.text, self.fontface, self.fontsize, color=self.fgcolor(), x=self.xcenter(), y=self.ycenter(), batch=batch, group=group, anchor_x='center', anchor_y='center')
-    def getrect(self, batch=None, group=None):
-        return Rect(self.x, self.y, self.width, self.height, self.color, batch, group)
 
 class MenuItem:
-    def __init__(self, text, onclick=None, ct=None):
-        self.active = False
+    def __init__(self, text, ct, onclick, img):
         self.text = text
         self.onclick = onclick
+        self.loadimg(img)
         self.ct = ct
     def __eq__(self, other):
-        if isinstance(other, MenuItem):
+        if type(other) is type(""):
+            return self.text == other
+        else:
             return self.text == other.text
-        else:
-            return False
     def __gt__(self, other):
-        if isinstance(other, MenuItem):
-            return self.text > other.text
-        else:
-            return False
+        if type(other) is type(""):
+            return self.text > other
+        return self.text > other.text
     def __ge__(self, other):
-        if isinstance(other, MenuItem):
-            return self.text >= other.text
-        else:
-            return False
+        if type(other) is type(""):
+            return self.text >= other
+        return self.text >= other.text
     def __lt__(self, other):
-        if isinstance(other, MenuItem):
-            return self.text < other.text
-        else:
-            return False
+        if type(other) is type(""):
+            return self.text < other
+        return self.text < other.text
     def __le__(self, other):
-        if isinstance(other, MenuItem):
-            return self.text <= other.text
-        else:
-            return False
+        if type(other) is type(""):
+            return self.text <= other
+        return self.text <= other.text
     def __repr__(self):
         return self.text
     def __str__(self):
         return self.text
     def __hash__(self):
         return hash(self.text)
-    def getlabel(self, x, y, fontface, fontsize, color=None, batch=None, group=None, width=None, height=None): # TODO: find out if the Nones here break things
-        if isinstance(color, Color):
-            color = color.tuple
-        return pyglet.text.Label(text=self.text, font_name=fontface, font_size=fontsize, color=color, x=x, y=y, batch=batch, group=group, width=width, height=height, anchor_x='left', anchor_y='top')
+    def loadimg(self, img):
+        if isinstance(img, pyglet.image.TextureRegion):
+            self.img = img
+        elif type(img) == type(""):
+            self.img = pyglet.resource.image(img)
+        else:
+            self.img = None
+    def getlabel(self, x, y, fontface, fontsize, color, batch, group):
+        return pyglet.text.Label(self.text, fontface, fontsize, color=color, x=x, y=y, batch=batch, group=group, anchor_x='left', anchor_y='top')
 
 
 class MenuList:
-    # eventually this should turn into an interface class for my backend db
     def __init__(self):
         self.items = []
         self.sorted = True
         self.nmap = {}
+    def __getitem__(self, i):
+        if i is None:
+            return None
+        if type(i) is type(1):
+            if not self.sorted:
+                self.sort()
+                self.sorted = True
+            return self.items[i]
+        else:
+            return self.nmap[i]
     def __len__(self):
         return len(self.items)
-    def __getitem__(self, i):
-        if type(i) is int:
-            return self.items[i]
-        elif type(i) is str:
-            return self.nmap[i]
-        elif isinstance(i, MenuItem):
-            # seems a mite redundant
-            return i
-        else:
-            raise IndexError("Index %s %s is incompatible with MenuItem." % (i, type(i)) )
-    def index(self, item):
-        if isinstance(item, MenuItem):
-            return self.items.index(item)
-        elif type(item) is str:
-            i = 0
-            for it in self.items:
-                if it.text == item:
-                    return i
-                i += 1
-            raise ValueError(it + " is not in MenuList")
-        else:
-            raise TypeError("Can't look up a %s in a MenuList" % type(item))
-    def append(self, mi):
-        if not isinstance(mi, MenuItem):
-            raise TypeError("Tried to add non-MenuItem to MenuList")
-        else:
-            self.items.append(mi)
-    def count(self, value):
-        return self.items.count(value)
-    def extend(self, it):
-        for item in it:
-            self.append(item)
-    def index(self, value):
-        if not isinstance(value, MenuItem):
-            if type(value) is str:
-                it = self.nmap[it]
-            else:
-                raise TypeError("Can't lookup %s in MenuList" % type(value))
-        else:
-            it = value
-        return self.items.index(it)
-    def insert(self, i, value):
-        if not isinstance(value, MenuItem):
-            raise TypeError("MenuList should not contain " + value)
-        else:
-            self.nmap[value.text] = value
-            self.items.insert(i, value)
-    def pop(self, i):
-        if type(i) is str:
-            r = self.nmap.pop(i)
-        elif type(i) is int:
-            r = self.items.pop(i)
-            self.nmap.pop(r.text)
-        else:
-            raise TypeError("This is not a valid index into a MenuList: " + i)
-        return r
-    def remove(self, value):
-        if value not in self.items:
-            return
-        else:
-            self.nmap.pop(value.text)
-            self.items.remove(value)
-    def reverse(self):
-        self.items.reverse()
-        return self
-        def sort(self):
-        # This just sorts by item name. I may want to make it sort by quantity eventually.
-        if not self.sorted:
-            self.items.sort()
-            self.sorted = True
-            return True # I did in fact sort
-        else:
-            return False # no I didn't
-
-    def add_item(self, name, onclick, ct=None):
+    def index(self, thingus):
+        return self.items.index(thingus)
+    def add_item(self, name, ct, onclick, img):
         if name in [item.text for item in self.items]:
             return None
         else:
-            to_add = MenuItem(name, onclick, ct)
+            to_add = MenuItem(name, ct, onclick, img)
             self.nmap[name] = to_add
             self.items.append(to_add)
-            self.sorted = False
+            self.sort()
             return to_add
-    def remove_item(self, i):
-        if type(i) is int:
-            del self.items[i]
-        elif type(i) is str:
-            del self.nmap[i]
-        else:
-            raise IndexError("Index type %s is incompatible with MenuItem." % type(i))
-
+    def remove_item(self, name):
+        self.items.remove(name) # not sure if this will work given a name of string type.
+    def remove(self, name):
+        self.items.remove(name)
+    def sort(self):
+        # This just sorts by item name. I may want to make it sort by quantity eventually.
+        if not self.sorted:
+            self.items.sort()
 
 class Menu(MouseListener):
-    def __init__(self, window, x, y, width, height, colorscheme, fontface, fontsize, spacing=6):
-        self.active_item = None
-        self.chosen_item = None
-        self.visible = False
-        self.nmap = {}
-        self.drawn = []
-
+    def __init__(self, x, y, width, height, bgcolor, inactive_color, active_color, fontface, fontsize, window, spacing=6):
         self.x = x
         self.y = y
         self.width = width
         self.height = height
-
-        self.bgcolor = Color.maybe_to_color(colorscheme.menus.bg.inactive)
-        self.inactive_color = Color.maybe_to_color(colorscheme.menus.fg.inactive)
-        self.active_color = Color.maybe_to_color(colorscheme.menus.fg.active)
+        self.bgcolor = Color.maybe_to_color(bgcolor)
+        self.inactive_color = Color.maybe_to_color(inactive_color)
+        self.active_color = Color.maybe_to_color(active_color)
         self.fontface = fontface
         self.fontsize = fontsize
         self.spacing = spacing
-
         self.items = MenuList()
-
+        self.rect = Rect(x, y, width, height, bgcolor)
         self.register(window)
-
     def __getitem__(self, i):
-        if type(i) is int:
-            return self.items[i]
-        elif type(i) is str:
-            return self.nmap[i]
-        else:
-            raise TypeError("I can't look up %s in a MenuList" % i)
+        return self.items[i]
     def getleft(self):
         return self.x
     def getbot(self):
@@ -441,208 +260,70 @@ class Menu(MouseListener):
         return self.width
     def getright(self):
         return self.x + self.width
-    def getitemtop(self, item):
-        assert(type(item) in [ int, str ] or isinstance(item, MenuItem))
-        if type(item) is int:
-            i = item
-        else:
-            i = self.index(item)
-        return self.gettop() - i * self.fontsize - i * self.spacing
-    def getitembot(self, item):
-        if type(item) is int:
-            i = item + 1
-        else:
-            i = self.index(item) + 1
-        return self.gettop() - i * self.fontsize
-    def getrect(self):
-        return Rect(self.x, self.y, self.width, self.height, self.bgcolor)
-    def index(self, item):
-        return self.items.index(item)
     def on_mouse_press(self, x, y, button, modifiers):
         MouseListener.on_mouse_press(self, x, y, button, modifiers)
-        if self.is_mouse_over_item(self.active_item):
-            self.chosen_item = self.active_item
+        if self.is_mouse_in():
+            for item in self.items:
+                if self.moused_over_item(item):
+                    self.pick = (item, button, modifiers)
+                    return
     def on_mouse_release(self, x, y, button, modifiers):
         MouseListener.on_mouse_release(self, x, y, button, modifiers)
-        if self.active_item is not None and self.chosen_item is not None:
-            if self.active_item == self.chosen_item:
-                self.active_item.onclick()
-    def add_item(self, name, onclick, number=None):
-        added = self.items.add_item(name, onclick, number)
-        self.nmap[name] = added
+        if self.is_mouse_in() and self.pick is not None:
+            if self.moused_over_item(self.pick[0]) and button == self.pick[1] and modifiers == self.pick[2]:
+                self.pick[0].onclick()
+        self.pick = None
+    def add_item(self, name, number, onclick, icon=None):
+        if icon is None:
+            height = self.fontsize
+        elif icon.height < self.fontsize:
+            height = self.fontsize
+        else:
+            height = icon.height
+        added = self.items.add_item(name, number, onclick, icon)
+        added.height = height
+        if len(self.items) == 1:
+            added.top_rel = 0
+            added.bot_rel = added.top_rel - added.height
+            print "Added the FIRST item."
+        elif len(self.items) == 2:
+            first = self.items[0]
+            added.top_rel = first.bot_rel - self.spacing
+            added.bot_rel = added.top_rel - added.height
+            print "Added the SECOND item."
+        else:
+            i = self.items.index(added)
+            prev = self.items[i - 1]
+            added.top_rel = prev.bot_rel - self.spacing
+            added.bot_rel = added.top_rel - added.height
+            print "Added the %dth item." % len(self.items)            
     def remove_item(self, name):
         self.items.remove_item(name)
     def is_mouse_over_item(self, item):
-        if item is None:
-            return False
-        elif not self.is_mouse_in():
-            return False
-        elif self.mouse.y > self.getitemtop(item):
-            return False
-        elif self.mouse.y < self.getitembot(item):
-            return False
-        else:
-            return True
-    def addtobatch(self, batch, menugroup, labelgroup):
-        if self.visible:
-            self.drawn.append(self.getrect().addtobatch(batch, menugroup))
-            for item in self.items:
-                if self.is_mouse_over_item(item):
-                    self.active_item = item
-                    color = self.active_color
-                else:
-                    color = self.inactive_color
-                drawable = item.getlabel(self.getleft(), self.getitembot(item), self.fontface, self.fontsize, color, batch, labelgroup)
-                self.drawn.append(drawable)
-            return self.drawn
-        else:
-            for graphic in self.drawn:
-                    graphic.delete()
-            self.drawn = []
-
-class MenuBar(Menu):
-    # Appears at the top of the window. Offers stuff you can mouseover
-    # to get the various menus; icons you can click to get to other
-    # screens.
-    #
-    # Wouldn't it be better to use wxwindows for this? Eh, one more
-    # library I gotta learn...
-    def __init__(self, window, height, colorscheme, fontface, fontsize, spacing=6, gutter=6):
-        self.active_item = None
-        self.chosen_item = None
-        self.lastmenu = None
-        self.visible = True
-        self.menu_open = False
-        self.nmap = {}
-
-        self.window = window
-        self.height = height
-        self.colorscheme = colorscheme
-        self.bgcolor = colorscheme.menus.bg.inactive
-        self.inactive_color = colorscheme.menus.fg.inactive
-        self.active_color = colorscheme.menus.fg.active
-        self.fontface = fontface
-        self.fontsize = fontsize
-        self.spacing = spacing
-        self.gutter = gutter
-        self.items = []
-        self.x = 0
-        self.y = self.window.height - self.height
-        self.lastright = 0
-        self.register(window)
-        # Not setting self.width because that'll vary with the window size.
-    def __getitem__(self, i):
-        if type(i) is int:
-            return self.items[i]
-        elif type(i) is str:
-            return self.nmap[i]
-        else:
-            raise TypeError("MenuBar can't lookup key " + i + " of " + type(i))
-    def getleft(self):
-        return self.x
-    def getright(self):
-        return self.window.width
-    def getbot(self):
-        return self.y
-    def gettop(self):
-        return self.window.height
-    def getwidth(self):
-        return self.window.width
-    def getheight(self):
-        return self.height
-    def getrect(self, batch=None, group=None):
-        return Rect(self.x, self.y, self.window.width, self.height, self.bgcolor, batch, group)
-    def add_item(self, text, menu):
-        # Menu bars hold menus. When the user clicks the text, a menu
-        # will appear thence.
-        # I'll need a function bywhichto call the menu.
-        def tog():
-            if not self.menu_open:
-                menu.visible = True
-                self.lastmenu = menu
-                self.menu_open = True
-            else:
-                self.lastmenu.visible = False
-                self.menu_open = False
-        menu.left = self.lastright + self.spacing
-        menu.right = menu.left + self.fontsize * len(text)
-        menu.text = text
-        self.items.append(menu)
-        self.lastright = menu.right
-        self.nmap[text] = menu
-    def add_menu(self, text):
-        # Add an empty menu with the given name.
-        #
-        # The new menu should be left justified with its name on the menu bar.
-        # If I can't verify that there's enough room on the menu bar...no dice.
-        # Let's say menus are 300px tall and 100px wide.
-        numenu = Menu(self.window, self.lastright, self.y - 300, 100, 300, self.colorscheme, self.fontface, self.fontsize, self.spacing)
-        self.add_item(text, numenu)
-    def add_menu_item(self, menu, text, onclick):
-        if not isinstance(menu, Menu):
-            menu = self[menu] # may raise TypeError
-        mi = MenuItem(text, onclick)
-        menu.add_item(mi)
-    def remove_item(self, name):
-        if type(name) in [ int, str ]:
-            it = self[name]
-        elif not isinstance(name, Menu):
-            raise TypeError("Bad index for MenuBar: " + repr(name) + " | " + type(name))
-        else:
-            it = name
-        width = it.right - it.left
-        j = i + 1
-        while j < len(self.items):
-            item = self.items[j]
-            item.left -= width
-            item.right -= width
-            j += 1
-        self.items.remove_item(it)
-    def is_mouse_over_item(self, item):
         if type(item) is type(1):
             item = self.items[item]
-        elif None in [item.left, item.right]:
+        if None in [item.bot_rel, item.top_rel]:
             return False
-        elif self.mouse.y < self.y:
-            return False
-        else:
-            return item.left <= self.mouse.x <= item.right
-    def addtobatch(self, batch, menugroup, labelgroup):
-        if not self.visible:
-            return
+        return item.bot_rel <= self.get_mouse_rel_y() <= item.top_rel
+    def addtobatch(self, batch, menugroup, labelgroup, start=0):
+        self.rect.addtobatch(batch, menugroup)
+        items_height = 0
+        draw_until = start
+        while items_height < self.getheight() and len(self.items) > draw_until:
+            items_height += self.items[draw_until].height
+            draw_until += 1
+        i = start
         drawn = []
-        drawn.append(self.getrect(batch, menugroup))
-        for item in self.items:
+        while i < draw_until:
+            color = self.inactive_color.tuple
             if self.is_mouse_in():
-                if self.is_mouse_over_item(item):
-                    self.active_item = item
-                    color = self.active_color
-                else:
-                    color = self.inactive_color
-            else:
-                self.active_item = None
-                color = self.inactive_color
-            if self.menu_open:
-                if self.chosen_item is item:
-                    item.addtobatch(batch, menugroup, labelgroup)
-            drawn.append(pyglet.text.Label(text=item.text, x=item.left, y=self.y + self.gutter, font_name=self.fontface, font_size=self.fontsize, color=color.tuple, batch=batch, group=labelgroup))
-        return drawn
-    def on_mouse_press(self, x, y, button, modifiers):
-        MouseListener.on_mouse_press(self, x, y, button, modifiers)
-        self.chosen_item = self.active_item
-    def on_mouse_release(self, x, y, button, modifiers):
-        MouseListener.on_mouse_release(self, x, y, button, modifiers)
-        if self.is_mouse_in():
-            if self.chosen_item is not None:
-                if self.active_item is not None:
-                    if self.chosen_item == self.active_item:
-                        self.chosen_item.visible = not self.chosen_item.visible
-                        self.chosen_item = None
-                        self.active_item = None
-        else:
-            if self.menu_open:
-                self.lastmenu.visible = False
-                self.menu_open = False
+                if self.is_mouse_over_item(i):
+                    color = self.active_color.tuple
+            drawn.append(self.items[i].getlabel(self.getleft(), self.items[i].top_rel + self.gettop(), self.fontface, self.fontsize, color, batch, labelgroup))
+            i += 1
+
+
+
 
 class Spot:
     """Controller for the icon that represents a Place.
@@ -657,7 +338,7 @@ class Spot:
         self.y = y
         self.r = r
         self.spotgraph = spotgraph
-        self.img = graphics.image('orb.png')
+        self.img = pyglet.resource.image('orb.png')
     def __repr__(self):
         coords = "(%i,%i)" % (self.x, self.y)
         return "Spot at " + coords + " representing " + str(self.place)
@@ -706,7 +387,7 @@ class SpotGraph:
             ps = self.places.keys()
             if portal.orig in ps and portal.dest in ps:
                 self.add_edge(self.places[portal.orig], self.places[portal.dest])
-
+                
 
 
 class Pawn:
@@ -814,24 +495,19 @@ class Pawn:
                 self.route.append((self.spotgraph.places[dest], speed))
             else:
                 return
-
-
     def cancel_route(self):
         """Canceling the route will let the Pawn reach the next node
         before stopping to await a new waypoint. If you want it
         stranded between two nodes, call delroute instead."""
         self.route = [self.curstep()]
-
     def delroute(self):
         self.route = None
-
     def extend_graph(self, spot):
         """Add a new Spot to the graph, where the Place is displayed
         on-screen at the given coordinates. Appropriate for when the
         character learns of a new place they can go to."""
         self.graph.append(spot)
         self.places[spot.place] = spot
-
 
 class PawnTimer:
     def __init__(self, pawns):
@@ -848,10 +524,3 @@ class PawnTimer:
         for pawn in self.pawns:
             pawn.move(reps)
 
-
-class WidgetFactory:
-    # I only want my widgets to load the necessary graphics once.
-    # To that effect, I will load all of them through the widget factory.
-    # The widget factory will load images once, and thereafter supply them to
-    # every widget it creates.
-    pass
