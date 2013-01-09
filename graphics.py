@@ -13,13 +13,13 @@ class GameGraphics:
         self.sprite_inventory = {}
         self.imgfile = imgfile
 
-    def getSprite(self, spriten):
+    def get_sprite(self, spriten):
         if self.sprite_inventory.has_key(spriten):
             return self.sprite_inventory[spriten]
         else:
             self.sprite_inventory[spriten] = pyglet.resource.image(spriten)
 
-    def loadSprites(self):
+    def load_sprites(self):
         imgconf = open(self.imgfile, 'r')
         line = imgconf.readline()
         tokens = []
@@ -38,8 +38,6 @@ class GameGraphics:
             line = imgconf.readline()
 
             imgconf.close()
-
-g = GameGraphics("images.conf")
 
 def image(imgn):
     return g.getSprite(imgn)
