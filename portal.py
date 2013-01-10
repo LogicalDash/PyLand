@@ -13,32 +13,23 @@ class Portal:
     # walking through it. They might be diegetic, in which case
     # they point to a Thing that the player can interact with, but
     # the portal itself is not a Thing and does not require one.
-    #
+    # 
     # These are implemented as methods, although they
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
-
+    
     weight = 0
     avatar = None
     dest = None
-    def __init__(self, destination, avatar=None, weight=0):
+    orig = None
+    def __init__(self, origin, destination, avatar=None, weight=0):
         self.weight = weight
         self.avatar = avatar
         self.dest = destination
-        self.count = 0
+        self.orig = origin
     def __repr__(self):
         return "(" + str(self.orig) + "->" + str(self.dest) + ")"
-    def __iter__(self):
-        return self
-    def __next__(self):
-        if count == 0:
-            return self.orig
-        elif count == 1:
-            return self.dest
-        else:
-            raise StopIteration
-        self.count += 1
     def getWeight(self):
         return weight
     def getAvatar(self):
@@ -49,3 +40,13 @@ class Portal:
         return True
     def isPassableBy(self, traveler):
         return self.isPassableNow() and self.admits(traveler)
+    def getDest(self):
+        return self.dest
+    def getOrig(self):
+        return self.orig
+    def getEnds(self):
+        return [self.orig, self.dest]
+    def touches(self, place):
+        return self.orig is place or self.dest is place
+    def findNeighboringPortals(self):
+        return self.orig.portals + self.dest.portals
