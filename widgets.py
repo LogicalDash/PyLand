@@ -221,12 +221,12 @@ class MenuList:
         return self
         def sort(self):
         # This just sorts by item name. I may want to make it sort by quantity eventually.
-        if not self.sorted:
-            self.items.sort()
-            self.sorted = True
-            return True # I did in fact sort
-        else:
-            return False # no I didn't
+            if not self.sorted:
+                self.items.sort()
+                self.sorted = True
+                return True # I did in fact sort
+            else:
+                return False # no I didn't
 
     def add_item(self, name, onclick, ct=None):
         if name in [item.text for item in self.items]:

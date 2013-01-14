@@ -1,7 +1,7 @@
 import pyglet
 import unittest
 
-def load_rltile(path):
+def loadrltile(path):
     badimg = pyglet.resource.image(path)
     badimgd = badimg.get_image_data()
     bad_rgba = badimgd.get_data('RGBA', badimgd.pitch)

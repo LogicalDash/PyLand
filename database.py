@@ -1,3 +1,6 @@
+import sys, os
+sys.path.append(os.curdir)
+
 import sqlite3
 from place import Place
 from portal import Portal
@@ -17,8 +20,7 @@ class Database:
         self.loaded_contents = {}
         self.loaded_container = {}
         self.loaded_spot = {}
-        self.loaded_item = {}
-        self.loaded_graphic = {}
+        self.loaded_img = {}
         self.loaded_graph = {}
         self.loaded_thing={}
 
@@ -38,7 +40,7 @@ class Database:
         c.execute("create table types (name);")
         c.execute("insert into types values ('int'), ('bool'), ('str'), ('float');")
         c.execute("create table permitted (attribute, value, foreign key(attribute) references attribute(name));")
-        c.execute('create table imgfile (name, path, rltile);')
+        c.execute('create table img (name, path, rltile);')
         c.execute('create table spotgraph (graph, spot, foreign key(spot) references place(name));')
         # I think maybe I will want to actually store sprites in the database eventually.
         # Later...
@@ -224,7 +226,7 @@ class Database:
             self.conn.commit()
 
 
-        def mkattribute(self, name, types=[], permitted=[], lower=None, upper=None, commit=True):
+    def mkattribute(self, name, types=[], permitted=[], lower=None, upper=None, commit=True):
         """
         Call this method to define an attribute that an item in the
         game can have. These attributes are not the same as the ones
@@ -352,7 +354,7 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def loadgraph(self, graphn):
+    def loadspotgraph(self, graphn):
         self.c.execute("select spot from spotgraph where graph='?'", (graphn,))
         g = SpotGraph()
         self.loaded_graph[graphn] = g
@@ -360,11 +362,48 @@ class Database:
             g.add_spot(self.getspot(spotstring))
         return g
 
-    def getgraph(self, graphn):
+    def getspotgraph(self, graphn):
         if self.loaded_graph.has_key(graphn):
             return self.loaded_graph[graphn]
         else:
             return self.loadgraph(graphn)
+
+    def savespotgraph(self, graph):
+        for spot in graph.spots:
+            self.savespot(spot)
+
+    def mkimg(self, name, path, rl=False):
+        self.c.execute("insert into img values (?, ?, ?)", (name, path, rl))
+
+    def loadrltile(self, name, path):
+        badimg = pyglet.resource.image(path)
+        badimgd = badimg.get_image_data()
+        bad_rgba = badimgd.get_data('RGBA', badimgd.pitch)
+        badimgd.set_data('RGBA', badimgd.pitch, bad_rgba.replace('\xffGll','\x00Gll').replace('\xff.', '\x00.'))
+        self.loaded_img[name] = badimgd.get_texture()
+        return self.loaded_img[name]
+
+    def loadimgfile(self, name, path):
+        tex = pyglet.resource.image(path).get_image_data().get_texture()
+        self.loaded_img[name] = tex
+        return tex
+        
+    def loadimg(self, name):
+        self.c.execute("select * from imgfile where name=?", (name,))
+        if self.c.rowcount == 0:
+            return None
+        row = self.c.fetchone()
+        if row[2]:
+            return self.loadrltile(name, row[1])
+        else:
+            return self.loadimgfile(name, row[1])
+
+    def getimg(self, name):
+        if self.loaded_img.has_key(name):
+            return self.loaded_img[name]
+        else:
+            return self.loadimg(name)
+        
 
 import unittest
 class DatabaseTestCase(unittest.TestCase):
@@ -375,7 +414,7 @@ class DatabaseTestCase(unittest.TestCase):
         self.db.mkattribute("lbs", types=["float"], lower=0.0)
         self.db.mkattribute("meterswide", types=["float"], lower=0.0)
         self.db.mkattribute("height")
-        self.db.mkattribute("size", types=["str"]
+        self.db.mkattribute("size", types=["str"])
         self.db.mkplace("myroom")
         self.db.mkthing("mydesk", "myroom", [("lbs", 50), ("meterswide", 1.2)])
         self.db.mkthing("thesky", atts=[("height", 9001)])
@@ -387,3 +426,6 @@ class DatabaseTestCase(unittest.TestCase):
         self.assertIs(desk.location, myroom)
         self.assertEqual(desk["lbs"], 50)
         self.assertEqual(desk["meterswide"], 1.2)
+    def runTest(self):
+        self.testthing()
+DatabaseTestCase().run()
