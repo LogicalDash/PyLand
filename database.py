@@ -15,14 +15,14 @@ class Database:
     def __init__(self, dbfile):
         self.conn = sqlite3.connect(dbfile)
         self.c = self.conn.cursor()
-        self.loaded_place = {}
-        self.loaded_portal = {}
-        self.loaded_contents = {}
-        self.loaded_container = {}
-        self.loaded_spot = {}
-        self.loaded_img = {}
-        self.loaded_graph = {}
-        self.loaded_thing={}
+        self.place = {}
+        self.portal = {}
+        self.contents = {}
+        self.container = {}
+        self.spot = {}
+        self.img = {}
+        self.spotgraph = {}
+        self.loaded_thing= {}
 
     def init(self):
         c = self.c
@@ -47,43 +47,43 @@ class Database:
         self.conn.commit()
 
     def loadcontainer(self, container):
-        self.c.execute("select contained from containment where container='?'", (container,))
+        self.c.execute("select contained from containment where container=?", (container,))
         r = self.c.fetchall()
-        self.loaded_contents[container] = r
+        self.contents[container] = r
         for contained in r:
-            self.loaded_container[contained] = container
+            self.container[contained] = container
         return r
 
     def loadcontained(self, contained):
-        self.c.execute("select container from containment where contained='?'", (contained,))
+        self.c.execute("select container from containment where contained=?", (contained,))
         r = self.c.fetchone()
-        if self.loaded_contents.has_key(r):
-            if contained not in self.loaded_contents[r]:
-                self.loaded_contents[r].append(contained)
-        self.loaded_container[contained] = r
+        if self.contents.has_key(r):
+            if contained not in self.contents[r]:
+                self.contents[r].append(contained)
+        self.container[contained] = r
         return r
 
     def getcontents(self, container):
-        if self.loaded_contents.has_key(container):
-            return self.loaded_contents[container]
+        if self.contents.has_key(container):
+            return self.contents[container]
         else:
             return self.loadcontainer(container)
 
     def getcontainer(self, contained):
-        if self.loaded_container.has_key(contained):
-            return self.loaded_container[contained]
+        if self.container.has_key(contained):
+            return self.container[contained]
         else:
             return self.loadcontained(contained)
 
     def mkplace(self, name, portals=[], contents=[], atts=[], commit=True):
         # Places should always exist in the database before they are Python objects.
         c = self.c
-        c.execute("insert into item values ('?')", (name,))
-        c.execute("insert into place values ('?')", (name,))
+        c.execute("insert into item values (?)", (name,))
+        c.execute("insert into place values (?)", (name,))
         for portal in portals:
-            c.execute("insert into portal values ('?', '?')", [name, dest])
+            c.execute("insert into portal values (?, ?)", [name, dest])
         for item in contents:
-            c.execute("insert into containment values ('?', '?')", [item, name])
+            c.execute("insert into containment values (?, ?)", [item, name])
         for atr in atts:
             self.attribute(atr, name, value, commit=False)
         if commit:
@@ -92,18 +92,18 @@ class Database:
 
     def loadplace(self, name):
         c = self.c
-        c.execute("select * from place where name='?'", (name,))
+        c.execute("select * from place where name=?", (name,))
         firstrow = c.fetchone()
         if firstrow is None:
             # no such place
             return None
         name = firstrow[0]
-        c.execute("select to_place from portal where from_place='?'", (name,))
+        c.execute("select to_place from portal where from_place=?", (name,))
         portals = c.fetchall()
-        c.execute("select contained from containment where container='?'", (name,))
+        c.execute("select contained from containment where container=?", (name,))
         contents = c.fetchall()
         p = Place(name) # I think I might have to handle nulls special
-        self.loaded_place[name] = p
+        self.place[name] = p
         for port in portals:
             d = self.getplace(port)
             p.connect_to(d)
@@ -113,46 +113,46 @@ class Database:
         return p
 
     def saveplace(self, place, commit=True):
-        # This time it is an actual Place object. Presumably from self.loaded_place.
+        # This time it is an actual Place object. Presumably from self.place.
         name = place.name
 
-        if self.loaded_contents.has_key(name):
-            self.c.execute("update containment set container='?' where contained='?'",
-                           (self.loaded_contents[name], name))
+        if self.contents.has_key(name):
+            self.c.execute("update containment set container=? where contained=?",
+                           (self.contents[name], name))
         # delete portals from the database when they no longer exist.
         ports = [port.dest for port in place.portals]
-        self.c.execute("select to_place from portal where from_place='?'", (name,))
+        self.c.execute("select to_place from portal where from_place=?", (name,))
         oldports = self.c.fetchall()
         for oldie in oldports:
             if oldie not in ports:
-                self.c.execute("delete from portal where from_place='?' and to_place='?'",
+                self.c.execute("delete from portal where from_place=? and to_place=?",
                                (name, oldie))
         # overwrite all the old ports with the new ones.
         # Handling insert and update separately seems to result in more queries.
         # This uses "or replace" which is apparently not standard SQL.
         for portal in place.portals:
-            self.c.execute("insert or replace into portal values ('?', '?', '?')",
+            self.c.execute("insert or replace into portal values (?, ?, ?)",
                            (name, portal.dest, portal.weight))
         # Now add all the contained things
         for th in place.contents:
             self.savething(th, commit=False) # Won't this have commits in it? Is that a problem?
-            self.c.execute("insert or replace into containment values ('?', '?')", (th.name, name))
+            self.c.execute("insert or replace into containment values (?, ?)", (th.name, name))
         for att in place.attributes:
-            self.c.execute("insert or replace into attribution values ('?', '?', '?')", (att,))
+            self.c.execute("insert or replace into attribution values (?, ?, ?)", (att,))
         if commit:
             self.conn.commit()
 
     def getplace(self, name):
         # Remember that this returns the *loaded* version, if there is one.
-        if self.loaded_place.has_key(name):
-            return self.loaded_place[name]
+        if self.place.has_key(name):
+            return self.place[name]
         else:
             return self.loadplace(name)
 
     def place_exists(self, name):
-        if self.loaded_place.has_key(name):
+        if self.place.has_key(name):
             return True
-        self.c.execute("select * from place where name='?'", (name,))
+        self.c.execute("select * from place where name=?", (name,))
         return self.c.rowcount > 0 # There certainly SHOULDN'T be more
                                    # than one, but this is not the
                                    # correct method in which to check
@@ -160,9 +160,9 @@ class Database:
 
     def mkthing(self, name, loc="", atts=[], commit=True):
         c = self.c
-        c.execute("insert into item values ('?')", (name,))
-        c.execute("insert into thing values ('?')", (name,))
-        attfmt = ','.join(["('?', '?', '?')" for att in atts])
+        c.execute("insert into item values (?)", (name,))
+        c.execute("insert into thing values (?)", (name,))
+        attfmt = ','.join(["(?, ?, ?)" for att in atts])
         attval = []
         for att in atts:
             attval.append(att[0])
@@ -172,29 +172,29 @@ class Database:
         # Only then do I add the thing to a location, because it's
         # possible the location has some restrictions that will deny this
         # thing entry, because of its attributes.
-        c.execute("insert into containment values ('?', '?')", (loc, name))
+        c.execute("insert into containment values (?, ?)", (loc, name))
         if commit:
             self.conn.commit()
 
     def savething(self, th, commit=True):
-        self.c.execute("insert or replace into item values ('?')", (th.name,))
-        self.c.execute("insert or replace into thing values ('?')", (th.name,))
-        self.c.execute("insert or replace into containment values ('?', '?')",
+        self.c.execute("insert or replace into item values (?)", (th.name,))
+        self.c.execute("insert or replace into thing values (?)", (th.name,))
+        self.c.execute("insert or replace into containment values (?, ?)",
                        (th.location.name, th.name))
         for attr in th.attributes:
-            self.c.execute("insert or replace into attribution values ('?', '?', '?')", (attr,))
+            self.c.execute("insert or replace into attribution values (?, ?, ?)", (attr,))
         if commit:
             self.conn.commit()
 
     def loadthing(self, name):
         c = self.c
-        c.execute("select container from containment where contained='?'", (name,))
+        c.execute("select container from containment where contained=?", (name,))
         if c.rowcount > 0:
             loc_s = c.fetchone()
             loc = self.getplace(loc_s)
         else:
             loc = None
-        c.execute("select attribute, value from attribution where attributed_to='?'", (name,))
+        c.execute("select attribute, value from attribution where attributed_to=?", (name,))
         atts_s_l = c.fetchall()
         atts_l = [att for att in atts_s_l]
         th = Thing(name, loc, dict(atts_l))
@@ -211,16 +211,16 @@ class Database:
         if self.loaded_thing.has_key(name):
             return True
         else:
-            self.c.execute("select * from thing where name='?'", (name,))
+            self.c.execute("select * from thing where name=?", (name,))
             return self.c.rowcount > 0
 
     def insertthing(self, name, into, commit=True):
-        self.c.execute("insert or replace into containment values ('?', '?')", (name, into))
+        self.c.execute("insert or replace into containment values (?, ?)", (name, into))
 
         if self.loaded_thing.has_key(name):
             th = self.loaded_thing[name]
-            if th not in self.loaded_contents[into]:
-                self.loaded_contents[into].append(th)
+            if th not in self.contents[into]:
+                self.contents[into].append(th)
 
         if commit:
             self.conn.commit()
@@ -259,7 +259,7 @@ class Database:
 
 
     def loadattr(self, attr):
-        self.c.execute("select value from permitted_values where attribute='?'", (attr,))
+        self.c.execute("select value from permitted_values where attribute=?", (attr,))
         r = self.c.fetchall()
         self.loaded_permitted[attr] = r
         return r
@@ -277,40 +277,40 @@ class Database:
                     return True
             return False
         else:
-            self.c.execute("select * from attribution where attribute='?' and attributed_to='?'",
+            self.c.execute("select * from attribution where attribute=? and attributed_to=?",
                            (attr, item))
             return self.c.rowcount > 0
 
     def attribute(self, attr, item, val, commit=True):
-        self.c.execute("insert into attribution values ('?', '?', '?')", (attr, item, val))
+        self.c.execute("insert into attribution values (?, ?, ?)", (attr, item, val))
         if commit:
             self.conn.commit()
 
     def permitted(self, attr, val):
-        self.c.execute("select from permitted_values where attribute='?' and value='?'",
+        self.c.execute("select from permitted_values where attribute=? and value=?",
                        (attr, val))
         return self.c.rowcount > 0
 
     def permit(self, attr, val, commit=True):
-        self.c.execute("insert into permitted_values values ('?', '?')", (attr, val))
+        self.c.execute("insert into permitted_values values (?, ?)", (attr, val))
         if commit:
             self.conn.commit()
 
     def delthing(self, thing, commit=True):
         c = self.c
-        c.execute("delete from containment where contained='?' or container='?'", (thing, thing))
-        c.execute("delete from thing where name='?'", (thing,))
+        c.execute("delete from containment where contained=? or container=?", (thing, thing))
+        c.execute("delete from thing where name=?", (thing,))
         if commit:
             self.conn.commit()
 
     def mkportal(self, orig, dest, commit=True):
         if not self.portal_connecting(orig, dest):
-            self.c.execute("insert into portal values ('?', '?')", (orig, dest))
+            self.c.execute("insert into portal values (?, ?)", (orig, dest))
         if commit:
             self.conn.commit()
 
     def delportal(self, orig, dest, commit=True):
-        self.c.execute("delete from portal where orig='?' and dest='?'", (orig, dest))
+        self.c.execute("delete from portal where orig=? and dest=?", (orig, dest))
         if commit:
             self.conn.commit()
 
@@ -318,53 +318,53 @@ class Database:
         if self.spot_loaded.has_key(place):
             return True
         else:
-            self.c.execute("select * from spot where place='?'", (place,))
+            self.c.execute("select * from spot where place=?", (place,))
             return self.c.fetchone() is not None
 
     def mkspot(self, place, x, y, r, graph, commit=True):
         if not self.has_spot(place):
-            self.c.execute("insert into spot values ('?','?','?','?','?')", (place, x, y, r, graph))
+            self.c.execute("insert into spot values (?,?,?,?,?)", (place, x, y, r, graph))
             if commit:
                 self.conn.commit()
 
     def loadspot(self, place):
-        self.c.execute("select * from spot where place='?'", (place,))
+        self.c.execute("select * from spot where place=?", (place,))
         q = self.c.fetchone()
         r = Spot(self.getplace(q[0]), int(q[1]), int(q[2]), int(q[3]), self.getgraph(q[4]))
         self.getgraph(q[4]).add_spot(r)
-        self.loaded_spot[place] = r
+        self.spot[place] = r
         return r
 
     def getspot(self, placen):
-        if self.loaded_spot.has_key(placen):
-            return self.loaded_spot[placen]
+        if self.spot.has_key(placen):
+            return self.spot[placen]
         else:
             return self.loadspot(placen)
 
     def savespot(self, spot, commit=True):
-        self.c.execute("insert or replace into spot values ('?', '?', '?', '?', '?')",
+        self.c.execute("insert or replace into spot values (?, ?, ?, ?, ?)",
                        (spot.place.name, spot.x, spot.y, spot.r, spot.spotgraph.name))
-        self.c.execute("insert or replace into spotgraph values ('?', '?')",
+        self.c.execute("insert or replace into spotgraph values (?, ?)",
                        (spot.spotgraph.name, spot.place.name))
         if commit:
             self.conn.commit()
 
     def delspot(self, spot, commit=True):
-        self.c.execute("delete from spot where place='?'", (spot.place.name,))
+        self.c.execute("delete from spot where place=?", (spot.place.name,))
         if commit:
             self.conn.commit()
 
     def loadspotgraph(self, graphn):
-        self.c.execute("select spot from spotgraph where graph='?'", (graphn,))
+        self.c.execute("select spot from spotgraph where graph=?", (graphn,))
         g = SpotGraph()
-        self.loaded_graph[graphn] = g
+        spotgraph[graphn] = g
         for spotstring in c:
             g.add_spot(self.getspot(spotstring))
         return g
 
     def getspotgraph(self, graphn):
-        if self.loaded_graph.has_key(graphn):
-            return self.loaded_graph[graphn]
+        if spotgraph.has_key(graphn):
+            return self.spotgraph[graphn]
         else:
             return self.loadgraph(graphn)
 
@@ -380,12 +380,12 @@ class Database:
         badimgd = badimg.get_image_data()
         bad_rgba = badimgd.get_data('RGBA', badimgd.pitch)
         badimgd.set_data('RGBA', badimgd.pitch, bad_rgba.replace('\xffGll','\x00Gll').replace('\xff.', '\x00.'))
-        self.loaded_img[name] = badimgd.get_texture()
-        return self.loaded_img[name]
+        self.img[name] = badimgd.get_texture()
+        return self.img[name]
 
     def loadimgfile(self, name, path):
         tex = pyglet.resource.image(path).get_image_data().get_texture()
-        self.loaded_img[name] = tex
+        self.img[name] = tex
         return tex
         
     def loadimg(self, name):
@@ -399,8 +399,8 @@ class Database:
             return self.loadimgfile(name, row[1])
 
     def getimg(self, name):
-        if self.loaded_img.has_key(name):
-            return self.loaded_img[name]
+        if self.img.has_key(name):
+            return self.img[name]
         else:
             return self.loadimg(name)
         
