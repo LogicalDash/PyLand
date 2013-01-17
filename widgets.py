@@ -337,9 +337,6 @@ class Menu(MouseListener):
             drawn.append(self.items[i].getlabel(self.getleft(), self.items[i].top_rel + self.gettop(), self.fontface, self.fontsize, color, batch, labelgroup))
             i += 1
 
-
-
-
 class Spot:
     """Controller for the icon that represents a Place.
 

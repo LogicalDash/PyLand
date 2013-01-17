@@ -403,6 +403,10 @@ class Database:
             return self.img[name]
         else:
             return self.loadimg(name)
+
+    def getallimg(self):
+        self.c.execute("select name from imgfile")
+        return [row[0] for row in c]
         
 
 import unittest
