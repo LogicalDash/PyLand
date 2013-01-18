@@ -9,8 +9,6 @@ from thing import Thing
 from attrcheck import *
 
 
-
-
 class Database:
     def __init__(self, dbfile):
         self.conn = sqlite3.connect(dbfile)
@@ -22,7 +20,8 @@ class Database:
         self.spot = {}
         self.img = {}
         self.spotgraph = {}
-        self.loaded_thing= {}
+        self.thing= {}
+
 
     def init(self):
         c = self.c
@@ -40,11 +39,19 @@ class Database:
         c.execute("create table types (name);")
         c.execute("insert into types values ('int'), ('bool'), ('str'), ('float');")
         c.execute("create table permitted (attribute, value, foreign key(attribute) references attribute(name));")
-        c.execute('create table img (name, path, rltile);')
-        c.execute('create table spotgraph (graph, spot, foreign key(spot) references place(name));')
+        c.execute("create table img (name, path, rltile);")
+        c.execute("create table spotgraph (graph, spot, foreign key(spot) references place(name));")
         # I think maybe I will want to actually store sprites in the database eventually.
         # Later...
         self.conn.commit()
+
+    def initialized(self):
+        try:
+            for tab in ["thing", "place", "attribute", "img", "spotgraph"]:
+                self.c.execute("select * from ?", (tab,))
+        except:
+            return False
+        return True
 
     def loadcontainer(self, container):
         self.c.execute("select contained from containment where container=?", (container,))
@@ -152,11 +159,8 @@ class Database:
     def place_exists(self, name):
         if self.place.has_key(name):
             return True
-        self.c.execute("select * from place where name=?", (name,))
-        return self.c.rowcount > 0 # There certainly SHOULDN'T be more
-                                   # than one, but this is not the
-                                   # correct method in which to check
-                                   # that
+        self.c.execute("select count(*) from place where name=?", (name,))
+        return c.fetchone()[0] > 0
 
     def mkthing(self, name, loc="", atts=[], commit=True):
         c = self.c
@@ -189,8 +193,8 @@ class Database:
     def loadthing(self, name):
         c = self.c
         c.execute("select container from containment where contained=?", (name,))
-        if c.rowcount > 0:
-            loc_s = c.fetchone()
+        loc_s = c.fetchone()
+        if loc_s is not None:
             loc = self.getplace(loc_s)
         else:
             loc = None
@@ -198,27 +202,27 @@ class Database:
         atts_s_l = c.fetchall()
         atts_l = [att for att in atts_s_l]
         th = Thing(name, loc, dict(atts_l))
-        self.loaded_thing[name] = th
+        self.thing[name] = th
         return th
 
     def getthing(self, name):
-        if self.loaded_thing.has_key(name):
-            return self.loaded_thing[name]
+        if self.thing.has_key(name):
+            return self.thing[name]
         else:
             return self.loadthing(name)
 
     def thing_exists(self, name):
-        if self.loaded_thing.has_key(name):
+        if self.thing.has_key(name):
             return True
         else:
-            self.c.execute("select * from thing where name=?", (name,))
-            return self.c.rowcount > 0
+            self.c.execute("select count(*) from thing where name=?", (name,))
+            return self.c.fetchone()[0] > 0
 
     def insertthing(self, name, into, commit=True):
         self.c.execute("insert or replace into containment values (?, ?)", (name, into))
 
-        if self.loaded_thing.has_key(name):
-            th = self.loaded_thing[name]
+        if self.thing.has_key(name):
+            th = self.thing[name]
             if th not in self.contents[into]:
                 self.contents[into].append(th)
 
@@ -277,9 +281,9 @@ class Database:
                     return True
             return False
         else:
-            self.c.execute("select * from attribution where attribute=? and attributed_to=?",
+            self.c.execute("select count(*) from attribution where attribute=? and attributed_to=?",
                            (attr, item))
-            return self.c.rowcount > 0
+            return self.c.fetchone()[0] > 0
 
     def attribute(self, attr, item, val, commit=True):
         self.c.execute("insert into attribution values (?, ?, ?)", (attr, item, val))
@@ -287,9 +291,9 @@ class Database:
             self.conn.commit()
 
     def permitted(self, attr, val):
-        self.c.execute("select from permitted_values where attribute=? and value=?",
+        self.c.execute("select count(*) from permitted_values where attribute=? and value=?",
                        (attr, val))
-        return self.c.rowcount > 0
+        return self.c.fetchone()[0] > 0
 
     def permit(self, attr, val, commit=True):
         self.c.execute("insert into permitted_values values (?, ?)", (attr, val))
@@ -387,13 +391,13 @@ class Database:
         tex = pyglet.resource.image(path).get_image_data().get_texture()
         self.img[name] = tex
         return tex
-        
+
     def loadimg(self, name):
         self.c.execute("select * from imgfile where name=?", (name,))
-        if self.c.rowcount == 0:
-            return None
         row = self.c.fetchone()
-        if row[2]:
+        if row is None:
+            return
+        elif row[2]:
             return self.loadrltile(name, row[1])
         else:
             return self.loadimgfile(name, row[1])
@@ -407,7 +411,7 @@ class Database:
     def getallimg(self):
         self.c.execute("select name from imgfile")
         return [row[0] for row in c]
-        
+
 
 import unittest
 class DatabaseTestCase(unittest.TestCase):
