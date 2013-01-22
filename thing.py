@@ -2,20 +2,10 @@ import place
 import level
 
 class Thing:
-    loc = None
-    def __init__(self, name, desc='', loc=None, attributes=[]):
-        self.name = name
-        self.desc = desc
-        self.attributes = attributes
-        if loc is not None:
-            if issubclass(loc, place.Place):
-                self.loc = loc
-            elif type(loc) is str:
-                self.loc = level.getLevel().places[loc]
     def __init__(self, name, loc, attributes):
         self.name = name
         self.location = loc
-        self.attribute = dict(attributes)
+        self.att = dict(attributes)
     def __repr__(self):
         if self.location is None:
             loc = "nowhere"
@@ -23,5 +13,4 @@ class Thing:
             loc = str(self.location)
         return self.name + "@" + loc + str(self.attribute)
     def __getitem__(self, i):
-        return self.attribute[i]
-
+        return self.att[i]

@@ -151,11 +151,10 @@ class Rect:
         self.sprite = pyglet.sprite.Sprite(self.image, self.x, self.y, batch=batch, group=group)
 
 class MenuItem:
-    def __init__(self, text, ct, onclick, img):
+    def __init__(self, text, onclick, closer=True):
         self.text = text
         self.onclick = onclick
-        self.loadimg(img)
-        self.ct = ct
+        self.closer = closer
     def __eq__(self, other):
         if type(other) is type(""):
             return self.text == other
@@ -183,13 +182,6 @@ class MenuItem:
         return self.text
     def __hash__(self):
         return hash(self.text)
-    def loadimg(self, img):
-        if isinstance(img, pyglet.image.TextureRegion):
-            self.img = img
-        elif type(img) == type(""):
-            self.img = pyglet.resource.image(img)
-        else:
-            self.img = None
     def getlabel(self, x, y, fontface, fontsize, color, batch, group):
         return pyglet.text.Label(self.text, fontface, fontsize, color=color, x=x, y=y, batch=batch, group=group, anchor_x='left', anchor_y='top')
 
@@ -198,7 +190,7 @@ class MenuList:
     def __init__(self):
         self.items = []
         self.sorted = True
-        self.nmap = {}
+        self.textmap = {}
     def __getitem__(self, i):
         if i is None:
             return None
@@ -213,9 +205,11 @@ class MenuList:
         return len(self.items)
     def index(self, thingus):
         return self.items.index(thingus)
-    def add_item(self, name, ct, onclick, img):
-        self.nmap.pop(value.text)
-        self.items.remove(value)
+    def insert_item(self, i, text, onclick, closer=True):
+        mi = MenuItem(text, onclick, closer)
+        self.textmap[text] = mi
+        self.items.insert(i, mi)
+        return mi
     def reverse(self):
         self.items.reverse()
         return self
@@ -227,20 +221,13 @@ class MenuList:
                 return True # I did in fact sort
             else:
                 return False # no I didn't
-
-    def add_item(self, name, onclick, ct=None):
-        if name in [item.text for item in self.items]:
-            return None
-        else:
-            to_add = MenuItem(name, ct, onclick, img)
-            self.nmap[name] = to_add
-            self.items.append(to_add)
-            self.sort()
-            return to_add
-    def remove_item(self, name):
-        self.items.remove(name) # not sure if this will work given a name of string type.
-    def remove(self, name):
-        self.items.remove(name)
+    def remove_item(self, it):
+        if isinstance(it, MenuItem):
+            self.item.remove(it)
+        elif type(it) is str:
+            self.item.remove(self.textmap[it])
+        elif type(it) is int:
+            del self.item[it]
     def sort(self):
         # This just sorts by item name. I may want to make it sort by quantity eventually.
         if not self.sorted:
@@ -288,30 +275,18 @@ class Menu(MouseListener):
             if self.moused_over_item(self.pick[0]) and button == self.pick[1] and modifiers == self.pick[2]:
                 self.pick[0].onclick()
         self.pick = None
-    def add_item(self, name, number, onclick, icon=None):
-        if icon is None:
-            height = self.fontsize
-        elif icon.height < self.fontsize:
-            height = self.fontsize
-        else:
-            height = icon.height
-        added = self.items.add_item(name, number, onclick, icon)
-        added.height = height
+    def insert_item(self, idx, name, onclick, closer=True):
+        added = self.items.insert_item(idx, name, onclick, closer)
+        added.height = self.fontsize
         if len(self.items) == 1:
-            added.top_rel = 0
+            added.top_rel = self.getheight()
             added.bot_rel = added.top_rel - added.height
-            print "Added the FIRST item."
-        elif len(self.items) == 2:
-            first = self.items[0]
-            added.top_rel = first.bot_rel - self.spacing
-            added.bot_rel = added.top_rel - added.height
-            print "Added the SECOND item."
         else:
             i = self.items.index(added)
             prev = self.items[i - 1]
             added.top_rel = prev.bot_rel - self.spacing
             added.bot_rel = added.top_rel - added.height
-            print "Added the %dth item." % len(self.items)
+        print "Added the %dth item." % len(self.items)
     def remove_item(self, name):
         self.items.remove_item(name)
     def is_mouse_over_item(self, item):
