@@ -4,9 +4,9 @@ class Place:
     portals = []
     contents = []
     hazing = []
-    def __init__(self, name=None, display_name=None):
+    def __init__(self, name, atts):
         self.name = name
-        self.display_name=display_name
+        self.att = dict(atts)
     def connect_to(self, place):
         if place not in [portal.dest for portal in self.portals]:
             self.portals.append(Portal(self, place))
