@@ -275,8 +275,8 @@ class Menu(MouseListener):
             if self.moused_over_item(self.pick[0]) and button == self.pick[1] and modifiers == self.pick[2]:
                 self.pick[0].onclick()
         self.pick = None
-    def insert_item(self, idx, name, onclick, closer=True):
-        added = self.items.insert_item(idx, name, onclick, closer)
+    def insert_item(self, i, text, onclick, closer=True):
+        added = self.items.insert_item(i, text, onclick, closer)
         added.height = self.fontsize
         if len(self.items) == 1:
             added.top_rel = self.getheight()
@@ -286,7 +286,7 @@ class Menu(MouseListener):
             prev = self.items[i - 1]
             added.top_rel = prev.bot_rel - self.spacing
             added.bot_rel = added.top_rel - added.height
-        print "Added the %dth item." % len(self.items)
+        return added
     def remove_item(self, name):
         self.items.remove_item(name)
     def is_mouse_over_item(self, item):

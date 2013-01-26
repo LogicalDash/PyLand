@@ -67,14 +67,16 @@ class CompoundCheck(BoolCheck):
         return True
 
 class AttrCheck(CompoundCheck):
-    def __init__(self, typs=[], vals=[], lower=None, upper=None):
-        checks = [TypeCheck(typ) for typ in typs]
+    def __init__(self, typ=None, vals=[], lower=None, upper=None):
+        checks = []
         # Slowness may result if typs or vals have redundancies. I'd
         # like to check for that.
+        if typ is not None:
+            checks.append(TypeCheck(typ))
         if len(vals) > 0:
             checks.append(ListCheck(vals))
         if lower is not None:
             checks.append(LowerBoundCheck(lower))
         if upper is not None:
             checks.append(UpperBoundCheck(upper))
-        CompoundCheck.__init__(self, checks)
+        self.checks = checks
