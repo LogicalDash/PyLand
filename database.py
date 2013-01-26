@@ -133,7 +133,8 @@ class Database:
         for place in d.places:
             self.mkplace(place) # NOT tuples
         for portal in d.portals:
-            self.mkportal(*portal)
+            name = "portal[%s->%s]" % (portal[0], portal[1])
+            self.mkportal(name, portal[0], portal[1])
         for thing in d.things:
             self.mkthing(*thing)
         for attribute in d.attributes:
@@ -144,7 +145,7 @@ class Database:
             self.conn.commit()
 
     def knowplace(self, name):
-        self.c.execute("select count(*) from place where name=?;")
+        self.readcursor.execute("select count(*) from place where name=?;")
         return self.readcursor.fetchone()[0] == 1
 
     def haveplace(self, place):
@@ -182,7 +183,7 @@ class Database:
 
     def loadplace(self, name):
         self.readcursor.execute("select * from place where name=?;", (name,))
-        firstrow = c.fetchone()
+        firstrow = self.readcursor.fetchone()
         if firstrow is None:
             # no such place
             return None
@@ -230,10 +231,14 @@ class Database:
 
 
     def writething(self, name, loc="", atts=[], commit=defaultCommit):
-        pass
+        self.readcursor.execute("select count(*) from thing where name=?;", (name,))
+        if self.readcursor.fetchone()[0] == 1:
+            self.mkthing(name, loc, atts, commit)
+        else:
+            self.updthing(name, loc, atts, commit)
 
-    def savething(self, thingObj):
-        pass
+    def savething(self, thing):
+        self.writething(thing.name, thing.loc.name, thing.att.iteritems(), commit)
 
     def delthing(self, thing, commit=defaultCommit):
         c = self.conn.cursor()
@@ -242,7 +247,6 @@ class Database:
         c.close()
         if commit:
             self.conn.commit()
-
 
     def loadthing(self, name):
         self.readcursor.execute("select container from containment where contained=?;", (name,))
@@ -379,6 +383,7 @@ class Database:
         self.readcursor.execute("select value from permitted where attribute=?;", (name,))
         perms = [ row[0] for row in self.readcursor ]
         attrcheck = AttrCheck(typ, perms, lo, hi)
+        attrcheck.name = name
         self.attrcheckmap[name] = attrcheck
         return attrcheck
 
@@ -388,9 +393,23 @@ class Database:
         else:
             return self.loadattribute(name)
 
-    def saveattribute(self, attrcheck):
-        pass
-
+    def saveattribute(self, attrcheck, commit=defaultCommit):
+        assert(isinstance(attrcheck, AttrCheck))
+        permitted = []
+        lo = None
+        hi = None
+        typ = None
+        for check in attrcheck.checks:
+            if isinstance(check, LowerBoundCheck):
+                lo = check.bound
+            elif isinstance(check, UpperBoundCheck):
+                hi = check.bound
+            elif isinstance(check, TypeCheck):
+                typ = check.typ
+            elif isinstance(check, ListCheck):
+                permitted += check.list
+        self.writeattribute(attrcheck.name, typ, permitted, lo, hi, commit)
+        
     def knowattribute(self, name):
         self.readcursor.execute("select count(*) from attribute where name=?;", (name,))
         return self.readcursor.fetchone()[0] == 1
@@ -511,17 +530,13 @@ class Database:
     def haveportal(self, portal):
         return self.knowportal(portal.orig, portal.dest)
 
-    def mkportal(self, orig, dest, reciprocal=True, commit=defaultCommit):
-        name = 'portal[%s->%s]' % (orig, dest)
+    def mkportal(self, name, orig, dest, reciprocal=True, commit=defaultCommit):
         self.c.execute("insert into portal values (?, ?, ?);", (name, orig, dest))
         if reciprocal:
             name = 'portal[%s->%s]' % (dest, orig)
             self.c.execute("insert into portal values (?, ?, ?);" (name, dest, orig))
         if commit:
             self.conn.commit()
-
-    def updportal(self, orig, dest, commit=defaultCommit):
-        pass
 
     def delportal(self, orig_or_name, dest=None, commit=defaultCommit):
         if dest is None:
