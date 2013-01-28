@@ -51,11 +51,11 @@ class TypeCheck(BoolCheck):
 
 class ListCheck(BoolCheck):
     def __init__(self, l):
-        if list is None:
+        if l is None:
             return TrueCheck()
-        self.list = l
+        self.lst = l
     def check(self, n):
-        return n in self.list
+        return n in self.lst
 
 class CompoundCheck(BoolCheck):
     def __init__(self, checks, checkclass=BoolCheck):
@@ -68,15 +68,18 @@ class CompoundCheck(BoolCheck):
 
 class AttrCheck(CompoundCheck):
     def __init__(self, typ=None, vals=[], lower=None, upper=None):
-        checks = []
         # Slowness may result if typs or vals have redundancies. I'd
         # like to check for that.
+        self.typcheck = TrueCheck()
+        self.lstcheck = TrueCheck()
+        self.locheck = TrueCheck()
+        self.hicheck = TrueCheck()
         if typ is not None:
-            checks.append(TypeCheck(typ))
+            self.typcheck = TypeCheck(typ)
         if len(vals) > 0:
-            checks.append(ListCheck(vals))
+            self.lstcheck = ListCheck(vals)                                      
         if lower is not None:
-            checks.append(LowerBoundCheck(lower))
+            self.locheck = LowerBoundCheck(lower)
         if upper is not None:
-            checks.append(UpperBoundCheck(upper))
-        self.checks = checks
+            self.hicheck = UpperBoundCheck(upper)
+        self.checks = (self.typcheck, self.lstcheck, self.locheck, self.hicheck)

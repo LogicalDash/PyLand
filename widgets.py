@@ -221,20 +221,15 @@ class MenuList:
                 return True # I did in fact sort
             else:
                 return False # no I didn't
-    def remove_item(self, it):
-        if isinstance(it, MenuItem):
-            self.item.remove(it)
-        elif type(it) is str:
-            self.item.remove(self.textmap[it])
-        elif type(it) is int:
-            del self.item[it]
+    def remove_item(self, i):
+        del self.item[i]
     def sort(self):
         # This just sorts by item name. I may want to make it sort by quantity eventually.
         if not self.sorted:
             self.items.sort()
 
 class Menu(MouseListener):
-    def __init__(self, x, y, width, height, bgcolor, inactive_color, active_color, fontface, fontsize, window, spacing=6):
+    def __init__(self, x, y, width, height, bgcolor, inactive_color, active_color, fontface, fontsize, spacing, window):
         self.x = x
         self.y = y
         self.width = width
@@ -276,19 +271,12 @@ class Menu(MouseListener):
                 self.pick[0].onclick()
         self.pick = None
     def insert_item(self, i, text, onclick, closer=True):
+        if i > len(self.items):
+            i = len(self.items)
         added = self.items.insert_item(i, text, onclick, closer)
-        added.height = self.fontsize
-        if len(self.items) == 1:
-            added.top_rel = self.getheight()
-            added.bot_rel = added.top_rel - added.height
-        else:
-            i = self.items.index(added)
-            prev = self.items[i - 1]
-            added.top_rel = prev.bot_rel - self.spacing
-            added.bot_rel = added.top_rel - added.height
         return added
-    def remove_item(self, name):
-        self.items.remove_item(name)
+    def remove_item(self, i):
+        self.items.remove_item(i)
     def is_mouse_over_item(self, item):
         if type(item) is type(1):
             item = self.items[item]
@@ -300,8 +288,13 @@ class Menu(MouseListener):
         items_height = 0
         draw_until = start
         while items_height < self.getheight() and len(self.items) > draw_until:
-            items_height += self.items[draw_until].height
+            items_height += self.fontsize + self.spacing
             draw_until += 1
+        prev_height = self.getheight
+        for item in self.items:
+            item.top_rel = prev_height
+            item.bot_rel = prev_height - self.fontsize
+            prev_height -= self.fontsize + self.spacing
         i = start
         drawn = []
         while i < draw_until:
@@ -405,9 +398,16 @@ class Pawn:
     trip_completion = 0.0
     step = 0
     route = None
-    def __init__(self, start, spotgraph, img):
+    # I think I want to redo the coordinates on these so that they are
+    # relative to the associated spot.
+    def __init__(self, start, spotgraph, img, item=None, x=None, y=None):
         self.spotgraph = spotgraph
-        if isinstance(start, Spot):
+        if item is not None:
+            self.item = item
+        if x is not None and y is not None:
+            self.x = x
+            self.y = y
+        elif isinstance(start, Spot):
             self.curspot = start
             self.x = start.x
             self.y = start.y
@@ -415,6 +415,8 @@ class Pawn:
             self.curspot = self.spotgraph.places[start]
             self.x = self.curspot.x
             self.y = self.curspot.y
+        else:
+            raise ValueError("No way to tell where to put this pawn.")
         self.list = [img, self.x, self.y]
     def curstep(self):
         if self.step >= len(self.route):
@@ -510,3 +512,21 @@ class PawnTimer:
             self.delay -= freq
         for pawn in self.pawns:
             pawn.move(reps)
+
+class Canvas:
+    def __init__(self, width, height, texture, spotgraphs=[], pawns=[]):
+        self.width = width
+        self.height = height
+        self.tex = texture
+        self.spotgraphs = spotgraphs
+        self.pawns = pawns
+
+class Style:
+    def __init__(self, fontface, fontsize, spacing, bg_inactive, bg_active, fg_inactive, fg_active):
+        self.fontface = fontface
+        self.fontsize = fontsize
+        self.spacing = spacing
+        self.bg_inactive = bg_inactive
+        self.bg_active = bg_active
+        self.fg_inactive = fg_inactive
+        self.fg_active = fg_active
