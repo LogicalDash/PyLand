@@ -107,7 +107,8 @@ class Color:
     This is just a container class for the (red, green, blue, alpha)
     tuples that Pyglet uses to identify colors. I like being able to
     get a particular element by name rather than number."""
-    def __init__(self, r=0, g=0, b=0, a=255):
+    def __init__(self, name, r=0, g=0, b=0, a=255):
+        self.name = name
         self.red = r
         self.green = g
         self.blue = b
@@ -229,22 +230,24 @@ class MenuList:
             self.items.sort()
 
 class Menu(MouseListener):
-    def __init__(self, x, y, width, height, bgcolor, inactive_color, active_color, fontface, fontsize, spacing, window):
+    def __init__(self, x, y, width, height, style):
+        self.style = style
         self.x = x
         self.y = y
         self.width = width
         self.height = height
-        self.bgcolor = Color.maybe_to_color(bgcolor)
-        self.inactive_color = Color.maybe_to_color(inactive_color)
-        self.active_color = Color.maybe_to_color(active_color)
-        self.fontface = fontface
-        self.fontsize = fontsize
-        self.spacing = spacing
+        self.bgcolor = Color.maybe_to_color(style.bg_inactive)
+        self.inactive_color = Color.maybe_to_color(style.fg_inactive)
+        self.active_color = Color.maybe_to_color(style.fg_active)
+        self.fontface = style.fontface
+        self.fontsize = style.fontsize
+        self.spacing = style.spacing
         self.items = MenuList()
-        self.rect = Rect(x, y, width, height, bgcolor)
-        self.register(window)
+        self.rect = Rect(x, y, width, height, self.bgcolor)
     def __getitem__(self, i):
         return self.items[i]
+    def getstyle(self):
+        return Style(self.fontface, self.fontsize, self.spacing, self.bgcolor, self.bgcolor, self.inactive_color, self.active_color)
     def getleft(self):
         return self.x
     def getbot(self):
@@ -522,7 +525,8 @@ class Canvas:
         self.pawns = pawns
 
 class Style:
-    def __init__(self, fontface, fontsize, spacing, bg_inactive, bg_active, fg_inactive, fg_active):
+    def __init__(self, name, fontface, fontsize, spacing, bg_inactive, bg_active, fg_inactive, fg_active):
+        self.name = name
         self.fontface = fontface
         self.fontsize = fontsize
         self.spacing = spacing
@@ -530,3 +534,19 @@ class Style:
         self.bg_active = bg_active
         self.fg_inactive = fg_inactive
         self.fg_active = fg_active
+
+class WidgetFactory:
+    def __init__(self, db, window=None, batch=None):
+        self.db = db
+        if window is None:
+            self.window = pyglet.window.Window()
+        else:
+            self.window = window
+        if batch is None:
+            self.batch = pyglet.graphics.Batch()
+        else:
+            self.batch = batch
+
+class WidgetFactoryTestCase(unittest.TestCase):
+    def setUp(self):
+        

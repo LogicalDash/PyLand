@@ -82,4 +82,10 @@ class AttrCheck(CompoundCheck):
             self.locheck = LowerBoundCheck(lower)
         if upper is not None:
             self.hicheck = UpperBoundCheck(upper)
-        self.checks = (self.typcheck, self.lstcheck, self.locheck, self.hicheck)
+    def check(self, n):
+        if self.lstcheck.check(n):
+            return True
+        else:
+            return self.typcheck.check(n) and\
+            self.locheck.check(n) and\
+            self.hicheck.check(n)

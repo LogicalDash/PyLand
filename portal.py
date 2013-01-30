@@ -18,18 +18,16 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
-    
-    weight = 0
-    avatar = None
-    dest = None
-    orig = None
-    def __init__(self, origin, destination, avatar=None, weight=0):
+    def __init__(self, name, origin, destination, avatar=None, weight=0):
+        self.name = name
         self.weight = weight
         self.avatar = avatar
         self.dest = destination
         self.orig = origin
     def __repr__(self):
         return "(" + str(self.orig) + "->" + str(self.dest) + ")"
+    def __eq__(self, other):
+        return self.name == other.name
     def getWeight(self):
         return weight
     def getAvatar(self):

@@ -1,8 +1,8 @@
 class DefaultParameters:
     def __init__(self):
-        stubs = ['start_new_map', 'open_map', 'save_map', 'quit_map_editor', 'select_all', 'copy', 'paste', 'delete', 'new_custom_place', 'new_workplace', 'new_lair', 'new_commons', 'new_custom_thing', 'new_decoration', 'new_clothing', 'new_tool']
-        for stub in stubs:
-            exec('def %s():\n\tpass' % stub)
+#        stubs = ['start_new_map', 'open_map', 'save_map', 'quit_map_editor', 'select_all', 'copy', 'paste', 'delete', 'new_custom_place', 'new_workplace', 'new_lair', 'new_commons', 'new_custom_thing', 'new_decoration', 'new_clothing', 'new_tool']
+#        for stub in stubs:
+#            exec('def %s():\n\tpass' % stub)
 
         game_menu_items = { 'New' : 'start_new_map',
                     'Open' : 'open_map',
@@ -25,10 +25,16 @@ class DefaultParameters:
                        'Place' : 'place_menu_items',
                        'Thing' : 'thing_menu_items' }
 
-        self.menuitems = [ [ (menu_name, d[0], d[1], 1) for d in this_menu_items.iteritems() ] for (menu_name, this_menu_items) in menu_names.iteritems() ]
+        self.menuitems = []
+        for menu in menu_names.iteritems():
+            i = 0
+            exec('menu_contents = ' + menu[1] + ".iteritems()")
+            for content in menu_contents:
+                self.menuitems.append(((menu[0],), (i, content[0], content[1])))
+                i += 1
 
         little_basic_menus = [ ('Game', 0), ('Editor', 200), ('Place', 400), ('Thing', 600) ]
-        self.menus = [ (m[0], m[1], 200, 200, 400) for m in little_basic_menus ]
+        self.menus = [ ((m[0],), (m[1], 200, 200, 400, 'Default')) for m in little_basic_menus ]
 
         solarized_colors = { 'base03' : (0x00, 0x2b, 0x36),
                              'base02' : (0x07, 0x36, 0x42),
@@ -47,13 +53,13 @@ class DefaultParameters:
                              'cyan' : (0x2a, 0xa1, 0x98),
                              'green' : (0x85, 0x99, 0x00) }
 
-        self.colors = [ ('solarized-' + color[0], color[1][0], color[1][1], color[1][2] ) for color in solarized_colors.iteritems() ]
-        self.styles = [ ('Default', 'DejaVu Sans', 16, 6, 'solarized-base03', 'solarized-base2', 'solarized-base1', 'solarized-base01') ]
-        self.places = [ 'myroom', 'guestroom', 'mybathroom', 'diningoffice', 'kitchen', 'livingroom', 'longhall', 'mombathroom', 'momroom', 'outside' ]
-        self.portals = [
+        self.colors = [ (('solarized-' + color[0],), (color[1][0], color[1][1], color[1][2]) ) for color in solarized_colors.iteritems() ]
+        self.styles = [ (('Default',), ('DejaVu Sans', 16, 6, 'solarized-base03', 'solarized-base2', 'solarized-base1', 'solarized-base01')) ]
+        ps = [ 'myroom', 'guestroom', 'mybathroom', 'diningoffice', 'kitchen', 'livingroom', 'longhall', 'mombathroom', 'momroom', 'outside' ]
+        self.places = [ ((p,), ()) for p in ps]
+        pos = [
             ('myroom', 'guestroom'),
             ('myroom', 'mybathroom'),
-            ('myroom', 'guestroom'),
             ('myroom', 'outside', False),
             ('myroom', 'diningoffice'),
             ('myroom', 'livingroom'),
@@ -69,7 +75,8 @@ class DefaultParameters:
             ('longhall', 'momsroom'),
             ('momsroom', 'outside', False)
             ]
-        self.things = [
+        self.portals = [ (("portal[%s->%s]" % po[:2],), po) for po in pos ]
+        ths = [
             ('me', 'myroom'),
             ('diningtable', 'diningoffice'),
             ('mydesk', 'myroom'),
@@ -79,17 +86,20 @@ class DefaultParameters:
             ('fridge', 'kitchen'),
             ('momsbed', 'momsroom')
             ]
-        self.attributes = [
-            ('life' 'bool'),
-            ('bulk', 'int', None, 0),
-            ('grams', 'float', None, 0.0),
-            ('stickiness', 'int', None, -10, 10),
+        self.things = [ ((th[0],), th[1:]) for th in ths ]
+        atts = [
+            ('life', 'bool'),
+            ('bulk', 'int', [], 0),
+            ('grams', 'float', [], 0.0),
+            ('stickiness', 'int', [], -10, 10),
             ('grade level', 'int', ['Preschool', 'Kindergarten', 'Post-secondary'], 1, 12)
             ]
-        self.attributions = [
+        self.attributes = [ ((att[0],),att[1:]) for att in atts ]
+        tribs = [
             ('me', 'life', True),
             ('me', 'bulk', 7),
             ('me', 'grams', 63502.9),
             ('me', 'stickiness', 1),
             ('me', 'grade level', 'Post-secondary')
             ]
+        self.attributions = [ ((trib[1], trib[0]), (trib[2],)) for trib in tribs ]

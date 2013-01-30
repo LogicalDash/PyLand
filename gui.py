@@ -5,5 +5,3 @@ from graphics import GameGraphics
 
 window = pyglet.window.Window()
 batch = pyglet.graphics.Batch()
-
-g = GameGraphics('images.conf')
