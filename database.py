@@ -38,8 +38,7 @@ def valuesknow(tab, keyexp, x, y):
     return "select count(*) from " + tab + " where " + keyexp + " in (" + valuesrows(x, y) + ");"
 
 class Database:
-    """
-    Method naming conventions:
+    """Method naming conventions:
 
     mksomething(...) means write a record for a new entity
 
@@ -57,7 +56,10 @@ class Database:
 
     loadsomething(...) fetches data from the database, constructs an
     appropriate Python object out of it, puts the object in
-    somethingmap, and returns the object.
+    somethingmap, and returns the object. In the case of widgets, the
+    appropriate object is actually a tuple rather than an instance of
+    the class, because widgets need to be constructed from a
+    WidgetFactory, and those are not stored in the database.
 
     getsomething(...) fetches and returns an object from somethingmap
     if possible. But if somethingmap doesn't have it, get it from
@@ -91,7 +93,7 @@ class Database:
         self.spotmap = {}
         self.imgmap = {}
         self.spotgraphmap = {}
-        self.canvasmap = {}
+        self.boardmap = {}
         self.menumap = {}
         self.menuitemmap = {}
         self.attrvalmap = {}
@@ -131,17 +133,17 @@ class Database:
         self.writecursor.execute("create table thing (name text primary key, foreign key(name) references item(name));")
         self.writecursor.execute("create table portal (name text primary key, from_place, to_place, foreign key(name) references item(name), foreign key(from_place) references place(name), foreign key(to_place) references place(name), check(from_place<>to_place));")
         self.writecursor.execute("create table containment (contained, container, foreign key(contained) references item(name), foreign key(container) references item(name), check(contained<>container), primary key(contained));")
-        self.writecursor.execute("create table spot (place primary key, x, y, r, spotgraph, foreign key(place) references place(name));")
-        self.writecursor.execute("create table attrtype (name text primary key);")
-        self.writecursor.execute("create table attribute (name text primary key, type, lower, upper, foreign key(type) references attrtype(name));")
+        self.writecursor.execute("create table attribute (name text primary key, type text, lower, upper;")
         self.writecursor.execute("create table attribution (attribute, attributed_to, value, foreign key(attribute) references permitted_values(attribute), foreign key(attributed_to) references item(name), foreign key(value) references permitted_values(value), primary key(attribute, attributed_to));")
         self.writecursor.execute("create table permitted (attribute, value, foreign key(attribute) references attribute(name), primary key(attribute, value));")
         self.writecursor.execute("create table img (name text primary key, path, rltile);")
-        self.writecursor.execute("create table canvas (name text primary key, width integer, height integer, wallpaper, foreign key(wallpaper) references image(name));")
+        self.writecursor.execute("create table board (name text primary key, width integer, height integer, wallpaper, foreign key(wallpaper) references image(name));")
+        self.writecursor.execute("create table spotgraph (name text primary key, board, foreign key(board) references board(name));")        
+        self.writecursor.execute("create table spot (place primary key, x, y, r, spotgraph, foreign key(place) references place(name), foreign key(spotgraph) references spotgraph(name));")
         self.writecursor.execute("create table pawn (name text primary key, img, item, x integer, y integer, spot text, foreign key(img) references img(name), foreign key(item) references item(name), foreign key(spot) references place(name));")
         self.writecursor.execute("create table color (name text primary key, red integer not null check(red between 0 and 255), green integer not null check(green between 0 and 255), blue integer not null check(blue between 0 and 255));")
         self.writecursor.execute("create table style (name text primary key, fontface text not null, fontsize integer not null, spacing integer, bg_inactive, bg_active, fg_inactive, fg_active, foreign key(bg_inactive) references color(name), foreign key(bg_active) references color(name), foreign key(fg_inactive) references color(name), foreign key(fg_active) references color(name));")
-        self.writecursor.execute("create table menu (name text primary key, x integer not null, y integer not null, width integer not null, height integer not null, style text default 'Default', foreign key(style) references style(name));")
+        self.writecursor.execute("create table menu (name text primary key, x float not null, y float not null, width float not null, height float not null, style text default 'Default', start_visible boolean default 0, foreign key(style) references style(name));")
         self.writecursor.execute("create table menuitem (menu text, idx integer, text text, onclick text, closer boolean, foreign key(menu) references menu(name), primary key(menu, idx));")
 
         # I think maybe I will want to actually store pawns in the database eventually.
@@ -156,21 +158,23 @@ class Database:
             return False
         return True
 
-    def insert_defaults(self, d, commit=defaultCommit):
-        self.mkcolors(default.colors, commit=False)
-        self.mkstyles(default.styles, commit=False)
-        self.mkmenus(default.menus, commit=False)
-        self.mkmenuitems(default.menuitems, commit=False)
-        self.mkplaces(default.places, commit=False)
-        self.mkportals(default.portals, commit=False)
-        self.mkthings(default.things, commit=False)
-        self.mkattributes(default.attributes, commit=False)
-        self.mkattributions(default.attributions, commit=False)
+    def insert_defaults(self, default, commit=defaultCommit):
+        def f(tups):
+            return [ n[0]+n[1] for n in tups ]
+        self.mkmanycolor(f(default.colors), commit=False)
+        self.mkmanystyle(f(default.styles), commit=False)
+        self.mkmanymenu(f(default.menus), commit=False)
+        self.mkmanymenuitem(f(default.menuitems), commit=False)
+        self.mkmanyplace(f(default.places), commit=False)
+        self.mkmanyportal(f(default.portals), commit=False)
+        self.mkmanything(f(default.things), commit=False)
+        self.mkmanyattribute(f(default.attributes), commit=False)
+        self.mkmanyattribution(f(default.attributions), commit=False)
         if commit:
             self.conn.commit()
 
     def mkmany(self, tname, valtups, commit=defaultCommit):
-        querystr = valsins(tname, len(valtups[0]), len(valtups))
+        querystr = valuesins(tname, len(valtups[0]), len(valtups))
         vals = untuple(valtups)
         self.writecursor.execute(querystr, vals)
         if commit:
@@ -229,7 +233,7 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def mkplaces(self, placetups, commit=defaultCommit):
+    def mkmanyplace(self, placetups, commit=defaultCommit):
         self.mkmany("thing", placetups, commit=False)
         self.mkmany("place", placetups, commit=False)
         if commit:
@@ -303,9 +307,11 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def mkthings(self, thingtups, commit=defaultCommit):
-        self.mkmany("item", thingtups, commit=False)
-        self.mkmany("thing", thingtups commit=False)
+    def mkmanything(self, thingtups, commit=defaultCommit):
+        sane = [ (tup[0],) for tup in thingtups ]
+        self.mkmany("item", sane, commit=False)
+        self.mkmany("thing", sane, commit=False)
+        self.mkmanycontainment(thingtups)
         if commit:
             self.conn.commit()
 
@@ -397,7 +403,7 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def mkcontainments(self, conttups, commit=defaultCommit):
+    def mkmanycontainment(self, conttups, commit=defaultCommit):
         querystr = valuesins("containment", 2, len(conttups))
         flattups = []
         for tup in conttups:
@@ -439,17 +445,6 @@ class Database:
             return self.contained_in[contained]
         else:
             return self.loadcontainment(contained)
-
-    def getcontainer(self, contained):
-        contained_name = self.getcontainment(contained)
-        container_name = self.contained_in[contained_name]
-        return self.getitem(container_name)
-        
-    def delcontainment(self, contained, container, commit=defaultCommit):
-        self.writecursor.execute("delete from containment where contained=? and container=?;",
-                       (contained, container))
-        if commit:
-            self.conn.commit()
 
     def cullcontainment(self, container, keeps=[], commit=defaultCommit):
         if len(keeps) == 0:
@@ -498,9 +493,19 @@ class Database:
         """
         if typ=='':
             typ=None
+        elif typ not in self.typ.values():
+            raise TypeError("LiSE does not support this type: " + typ)
         self.writecursor.execute("insert into attribute values (?, ?, ?, ?);", (name, typ, lower, upper))
         for perm in permitted:
             self.writecursor.execute("insert into permitted values (?, ?);", (name, perm))
+        if commit:
+            self.conn.commit()
+
+    def mkmanyattribute(self, tups, commit=defaultCommit):
+        nopermitted = [ (tup[0], tup[1], tup[3], tup[4]) for tup in tups ]
+        onlypermitted = [ tup[2] for tup in tups ]
+        self.mkmany("attribute", nopermitted, commit=False)
+        self.mkmanypermitted(onlypermitted, commit=False)
         if commit:
             self.conn.commit()
 
@@ -606,6 +611,13 @@ class Database:
         if commit:
             self.conn.commit()
 
+    def mkmanypermitted(self, pairs, commit=defaultCommit):
+        actualpairs = [ pair for pair in pairs if len(pair) == 2 ]
+        if len(actualpairs) == 0:
+            return
+        meaningfulpairs = [ pair for pair in actualpairs if len(pair[0]) > 0 ]
+        self.mkmany("permitted", meaningfulpairs, commit)
+
     def writepermitted(self, attr, val, commit=defaultCommit):
         if not self.knowpermitted(attr, val):
             self.mkpermitted(attr, val, commit)
@@ -656,14 +668,8 @@ class Database:
         if commit:
             self.conn.commit()
         
-    def mkattributions(self, attups, commit=defaultCommit):
-        querystr = valuesins("attribution", 3, len(attups))
-        flatatts = []
-        for att in attups:
-            self.flatatts += list(att)
-        self.writecursor.execute(querystr, flatatts)
-        if commit:
-            self.conn.commit()
+    def mkmanyattribution(self, attups, commit=defaultCommit):
+        self.mkmany("attribution", attups, commit)
 
     def updattribution(self, item, attr, val, commit=defaultCommit):
         attrcheck = self.getattribute(attr)
@@ -806,10 +812,16 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def mkportals(self, porttups, commit=defaultCommit):
+    def mkmanyportal(self, porttups, commit=defaultCommit):
         pnames = [(tup[0],) for tup in porttups]
         self.mkmany("item", pnames, commit=False)
-        self.mkmany("portal", porttups, commit=False)
+        better = []
+        for tup in porttups:
+            better.append(tup[0:3])
+            if tup[3]:
+                recip = ("portal[%s->%s]" % (tup[2], tup[1]), tup[2], tup[1])
+                better.append(recip)
+        self.mkmany("portal", better, commit=False)
         if commit:
             self.conn.commit()
 
@@ -888,12 +900,18 @@ class Database:
         return self.knowall("spot", "(place)", tups)
 
     def havespot(self, place):
-        return self.knowspot(place.name)
+        if self.spotmap.has_key(place):
+            return True
+        else:
+            return self.knowspot(place.name)
 
     def mkspot(self, place, x, y, r, graph, commit=defaultCommit):
         self.writecursor.execute("insert into spot values (?, ?, ?, ?, ?);", (place, x, y, r, graph))
         if commit:
             self.conn.commit()
+
+    def mkmanyspot(self, tups, commit=defaultCommit):
+        self.mkmany("spot", tups, commit)
 
     def updspot(self, place, x, y, r, graph, commit=defaultCommit):
         self.writecursor.execute("update spot set x=?, y=?, r=?, spotgraph=? where place=?;"
@@ -911,12 +929,11 @@ class Database:
         self.writespot(spot.place.name, spot.x, spot.y, spot.r, spot.spotgraph.name, commit)
 
     def loadspot(self, place):
-        self.readcursor.execute("select * from spot where place=?;", (place,))
-        q = self.readcursor.fetchone()
-        r = Spot(self.getplace(q[0]), int(q[1]), int(q[2]), int(q[3]), self.getgraph(q[4]))
-        r.spotgraph.add_spot(r)
-        self.spotmap[place] = r
-        return r
+        self.readcursor.execute("select x, y, r, spotgraph from spot where place=?;", (place,))
+        spot = self.readcursor.fetchone()
+        spot[3] = self.getspotgraph(spot[3])
+        self.spotmap[place] = spot
+        return spot
 
     def getspot(self, placen):
         if self.spotmap.has_key(placen):
@@ -928,20 +945,6 @@ class Database:
         self.writecursor.execute("delete from spot where place=?;", (place,))
         if commit:
             self.conn.commit()
-
-    def loadspotgraph(self, graphn):
-        self.readcursor.execute("select spot from spotgraph where graph=?;", (graphn,))
-        g = SpotGraph()
-        for spotstring in self.readcursor:
-            g.add_spot(self.getspot(spotstring))
-        self.spotgraphmap[graphn] = g
-        return g
-
-    def getspotgraph(self, graphn):
-        if spotgraph.has_key(graphn):
-            return self.spotgraphmap[graphn]
-        else:
-            return self.loadgraph(graphn)
 
     def knowimg(self, name):
         self.readcursor.execute("select count(*) from img where name=?;", (name,))
@@ -960,6 +963,9 @@ class Database:
         self.writecursor.execute("insert into img values (?, ?, ?);", (name, path, rl))
         if commit:
             self.conn.commit()
+
+    def mkmanyimg(self, tups, commit=defaultCommit):
+        self.mkmany("img", tups)
 
     def updimg(self, name, path, rl=False, commit=defaultCommit):
         self.writecursor.execute("update img set path=?, rltile=? where name=?;", (path, rl, name))
@@ -1026,7 +1032,7 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def mkmenuitems(self, mitup, commit=defaultCommit):
+    def mkmanymenuitem(self, mitup, commit=defaultCommit):
         self.mkmany("menuitem", mitup, commit)
 
     def knowmenuitem(self, menuname, idx):
@@ -1056,23 +1062,19 @@ class Database:
     def loadmenuitem(self, menuname, idx):
         self.readcursor.execute("select text, onclick, closer from menuitem where menu=? and idx=?;", (menuname, idx))
         row = self.readcursor.fetchone()
-        if len(row) != 3:
-            return None
-        else:
-            menu = self.getmenu(menuname)
-            it = menu.insert_item(idx, row[0], row[1], row[2])
-            self.menuitemmap[(menuname, idx)] = it
-            return it
+        self.menuitemmap[menuname][idx] = row
+        return row
 
     def getmenuitem(self, menuname, idx):
-        if self.menuitemmap.has_key((menuname, idx)):
-            return self.menuitemmap[(menuname, idx)]
+        if self.menuitemmap.has_key(menuname):
+            if self.menuitemmap[menuname].has_key(idx):
+                return self.menuitemmap[menuname][idx]
+            else:
+                return self.loadmenuitem(menuname, idx)
         else:
             return self.loadmenuitem(menuname, idx)
 
     def delmenuitem(self, menuname, i, commit=defaultCommit):
-        if self.menumap.has_key(menuname):
-            self.menumap[menuname].remove_item(i)
         if self.menuitemmap.has_key(menuname):
             if self.menuitemmap[menuname].has_key(i):
                 del self.menuitemmap[menuname][i]
@@ -1081,81 +1083,62 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def loaditemsinmenu(self, name, window=None):
-        self.readcursor.execute("select i, text, onclick, closer from menuitem where menu=?;", (name,))
-        menu = self.getmenu(name, window)
-        i = 0
-        for row in self.readcursor:
-            menuitem = menu.insert_item(*row)
-            self.menuitemmap[name][i] = menuitem
-            i += 1
-
-    def getitemsinmenu(self, name):
-        return self.menumap[name].itervalues()
-
-    def delitemsinmenu(self, name, commit=defaultCommit):
-        if self.menumap.has_key(name):
-            for key in self.menumap[name].iterkeys():
-                del self.menumap[name][key]
-        self.writecursor.execute("delete from menuitem where menu=?;", (name,))
-        if commit:
-            self.conn.commit()
-
-    def getmenu(self, name, window=None):
-        if self.menu.has_key(name):
-            return self.menu[name]
-        elif window is not None:
-            return self.loadmenu(name, window)
-        else:
-            raise Exception("When getting a menu for the first time, you need to supply the window to put it in.")
-
-
-    def knowcanvas(self, name, w, h, wallpaper):
-        self.readcursor.execute("select count(*) from canvas where name=?;", (name,))
+    def knowboard(self, name, w, h, wallpaper):
+        self.readcursor.execute("select count(*) from board where name=?;", (name,))
         return self.readcursor.fetchone()[0] == 1
 
-    def havecanvas(self, canvas):
-        return self.knowcanvas(canvas.name)
+    def haveboard(self, board):
+        return self.knowboard(board.name)
 
-    def mkcanvas(self, name, w, h, wallpaper, commit=defaultCommit):
-        self.writecursor.execute("insert into canvas values (?, ?, ?, ?);",
+    def mkboard(self, name, w, h, wallpaper, commit=defaultCommit):
+        self.writecursor.execute("insert into board values (?, ?, ?, ?);",
                                  (name, w, h, wallpaper))
         if commit:
             self.conn.commit()
 
-    def updcanvas(self, name, w, h, wallpaper, commit=defaultCommit):
-        self.writecursor.execute("update canvas set width=?, height=?, wallpaper=? where name=?;",
+    def mkmanyboard(self, tups, commit=defaultCommit):
+        self.mkmany("board", tups)
+
+    def updboard(self, name, w, h, wallpaper, commit=defaultCommit):
+        self.writecursor.execute("update board set width=?, height=?, wallpaper=? where name=?;",
                                  (w, h, wallpaper, name))
         if commit:
             self.conn.commit()
 
-    def writecanvas(self, name, w, h, wallpaper, commit=defaultCommit):
-        if self.knowcanvas(name):
-            self.updcanvas(name, w, h, wallpaper, commit)
+    def writeboard(self, name, w, h, wallpaper, commit=defaultCommit):
+        if self.knowboard(name):
+            self.updboard(name, w, h, wallpaper, commit)
         else:
-            self.mkcanvas(name, w, h, wallpaper, commit)
+            self.mkboard(name, w, h, wallpaper, commit)
 
-    def loadcanvas(self, name):
-        self.readcursor.execute("select width, height, wallpaper from canvas where name=?;",
+    def loadboard(self, name):
+        self.readcursor.execute("select width, height, wallpaper from board where name=?;",
                                 (name,))
-        (w, h, wall) = self.readcursor.fetchone()
-        canvas = Canvas(w, h, wall)
-        canvas.name = name
-        self.canvasmap[name] = canvas
-        return canvas
+        board = self.readcursor.fetchone()
+        board[2] = self.getimg(board[2])
+        self.boardmap[name] = board
+        return board
 
-    def getcanvas(self, name):
-        if self.canvasmap.has_key(name):
-            return self.canvasmap[name]
+    def getboard(self, name):
+        if self.boardmap.has_key(name):
+            return self.boardmap[name]
         else:
-            return self.loadcanvas(name)
+            return self.loadboard(name)
 
-    def delcanvas(self, name, commit=defaultCommit):
-        if self.canvasmap.has_key(name):
-            del self.canvasmap[name]
-        self.writecursor.execute("delete from canvas where name=?;", (name,))
+    def delboard(self, name, commit=defaultCommit):
+        if self.boardmap.has_key(name):
+            del self.boardmap[name]
+        self.writecursor.execute("delete from board where name=?;", (name,))
         if commit:
             self.conn.commit()
+
+    def knowspotgraph(self, name):
+        self.readcursor.execute("select count(*) from spotgraph where name=?;",
+                                (name,))
+        return self.readcursor.fetchone()[0] > 1
+
+    def havespotgraph(self, sg):
+        return self.knowspotgraph(sg.name)
 
     def knowpawn(self, name):
         self.readcursor.execute("select count(*) from pawn where name=?;", (name,))
@@ -1164,34 +1147,37 @@ class Database:
     def havepawn(self, pawn):
         return self.knowpawn(pawn.name)
 
-    def mkpawn(self, name, img, item, canvas, x, y, spot, commit=defaultCommit):
+    def mkpawn(self, name, img, item, board, x, y, spot, commit=defaultCommit):
         self.writecursor.execute("insert into pawn values (?, ?, ?, ?, ?, ?);",
-                                 (name, img, item, canvas, x, y, spot))
+                                 (name, img, item, board, x, y, spot))
         if commit:
             self.conn.commit()
 
-    def updpawn(self, name, img, item, canvas, x, y, spot, commit=defaultCommit):
-        self.writecursor.execute("update pawn set img=?, item=?, canvas=?, x=?, y=?, spot=? where name=?;",
-                                 (name, img, item, canvas, x, y, spot))
+    def mkmanypawn(self, tups, commit=defaultCommit):
+        self.mkmany("pawn", tups)
+
+    def updpawn(self, name, img, item, board, x, y, spot, commit=defaultCommit):
+        self.writecursor.execute("update pawn set img=?, item=?, board=?, x=?, y=?, spot=? where name=?;",
+                                 (name, img, item, board, x, y, spot))
         if commit:
             self.conn.commit()
 
-    def writepawn(self, name, img, item, canvas, x, y, commit=defaultCommit):
+    def writepawn(self, name, img, item, board, x, y, commit=defaultCommit):
         if self.knowpawn(name):
-            self.updpawn(name, img, item, canvas, x, y, commit)
+            self.updpawn(name, img, item, board, x, y, commit)
         else:
-            self.mkpawn(name, img, item, canvas, x, y, commit)
+            self.mkpawn(name, img, item, board, x, y, commit)
 
     def loadpawn(self, name):
         self.readcursor.execute("select img, item, x, y, spot from pawn where name=?;",
                                 (name,))
-        (imgn, itemn, canvasn, x, y, spotn) = self.readcursor.fetchone()
+        (imgn, itemn, boardn, x, y, spotn) = self.readcursor.fetchone()
         img = self.getimg(imgn)
         item = self.getitem(itemn)
         spot = self.getspot(spotn)
         spotgraph = spot.spotgraph
         place = self.getplace(spotn)
-        pawn = Pawn(place, spotgraph, img, item, x, y)
+        pawn = (place, spotgraph, img, item, x, y)
         self.pawnmap[name] = pawn
         return pawn
 
@@ -1230,7 +1216,7 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def mkcolors(self, colortups, commit=defaultCommit):
+    def mkmanycolor(self, colortups, commit=defaultCommit):
         self.mkmany("color", colortups, commit)
     
     def updcolor(self, name, r, g, b, commit=defaultCommit):
@@ -1285,7 +1271,7 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def mkstyles(self, styletups, commit=defaultCommit):
+    def mkmanystyle(self, styletups, commit=defaultCommit):
         self.mkmany("style", styletups, commit)
 
     def updstyle(self, name, fontface, fontsize, spacing,
@@ -1353,23 +1339,23 @@ class Database:
     def havemenu(self, menu):
         return self.knowmenu(menu.name)
 
-    def mkmenu(self, name, x, y, w, h, sty, commit=defaultCommit):
+    def mkmenu(self, name, x, y, w, h, sty, dv=False, commit=defaultCommit):
         # mkplace et al. will insert multiple values for their contents
         # if they are supplied. To make this work similarly I should
         # take a style object for sty, rather than a string,
         # and insert all the colors before writing the menu w. style name.
         # But I kind of like this simpler way.
-        self.writecursor.execute("insert into menu values (?, ?, ?, ?, ?, ?);",
-                                 (name, x, y, w, h, sty))
+        self.writecursor.execute("insert into menu values (?, ?, ?, ?, ?, ?, ?);",
+                                 (name, x, y, w, h, sty, dv))
         if commit:
             self.conn.commit()
 
-    def mkmenus(self, menutups, commit=defaultCommit):
-        self.mkmany("menu", menutups, commit)
+    def mkmanymenu(self, menutups, commit=defaultCommit):
+        self.mkmany("menu", menutups)
 
-    def updmenu(self, name, x, y, w, h, sty, commit=defaultCommit):
-        self.writecursor.execute("update menu set x=?, y=?, width=?, height=?, style=? where name=?;",
-                                 (x, y, w, h, sty, name))
+    def updmenu(self, name, x, y, w, h, sty, dv, commit=defaultCommit):
+        self.writecursor.execute("update menu set x=?, y=?, width=?, height=?, style=?, default_visible=? where name=?;",
+                                 (x, y, w, h, sty, dv, name))
         if commit:
             self.conn.commit()
 
@@ -1387,11 +1373,8 @@ class Database:
     def loadmenu(self, name):
         if not self.knowmenu(name):
             raise ValueError("Menu does not exist: %s" % name)
-        self.readcursor.execute("select x, y, width, height, style from menu where name=?;", (name,))
-        (x, y, w, h, sty) = self.readcursor.fetchone()
-        style = self.getstyle(sty)
-        menu = Menu(x, y, w, h, style)
-        menu.name = name
+        self.readcursor.execute("select x, y, width, height, style, default_visible from menu where name=?;", (name,))
+        menu = self.readcursor.fetchone()
         self.menumap[name] = menu
         return menu
         
@@ -1451,15 +1434,27 @@ if testDB:
                 killer(*keytup)
                 self.assertFalse(knower(*keytup))
         def runTest(self):
-            testl = ['make', 'save', 'load', 'get', 'del', 'make']
-            db = Database(":memory:")
+            testl = ['make', 'save', 'get', 'del', 'make']
+            db = Database(":memory:", default.stubs)
             db.mkschema()
+            class Attribution:
+                def __init__(self, typ, perm, lo, hi):
+                    self.typ = typ
+                    self.perm = perm
+                    self.lo = lo
+                    self.hi = hi
+                def __eq__(self, other):
+                    return self.typ == other.typ and\
+                        self.perm == other.perm and\
+                        self.lo == other.lo and\
+                        self.hi == other.hi
             tabkey = [ ('place', default.places, Place),
                        ('portal', default.portals, Portal),
                        ('thing', default.things, Thing),
                        ('color', default.colors, Color),
                        ('style', default.styles, Style),
-                       ('menu', default.menus, Menu)]
+                       ('attribute', default.attributes, AttrCheck),
+                       ('attribution', default.attributions, Attribution) ]
             for pair in tabkey:
                 suf = pair[0]
                 for val in pair[1]:
@@ -1469,8 +1464,3 @@ if testDB:
                           
     dtc = DatabaseTestCase()
     dtc.runTest()
-realdb = Database(":memory:")
-realdb.mkschema()
-import parms
-defaults = parms.DefaultParameters()
-realdb.insert_defaults(defaults, True)

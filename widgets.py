@@ -9,96 +9,7 @@ def point_is_in(x, y, listener):
 def point_is_between(x, y, x1, y1, x2, y2):
     return x >= x1 and x <= x2 and y >= y1 and y <= y2
 
-class MouseStruct:
-    def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.dy = 0
-        self.dy = 0
-        self.left = False
-        self.middle = False
-        self.right = False
 
-class ModKeyStruct:
-    def __init__(self):
-        self.shift = False
-        self.ctrl = False
-        self.meta = False
-
-
-class MouseListener:
-    """MouseListener is a mix-in class. It provides basic
-    functionality for handling four mouse events: on_mouse_motion,
-    on_mouse_press, on_mouse_release, and on_mouse_drag.
-
-    You may use the register(window) method defined here to register
-    all four event listeners with the given window."""
-    def get_mouse_rel_x(self):
-        return self.mouse.x - self.getleft()
-    def get_mouse_rel_y(self):
-        return self.mouse.y - self.gettop()
-    def get_mouse_offset_x(self):
-        return self.mouse.x - self.x
-    def get_mouse_offset_y(self):
-        return self.mouse.y - self.y
-    def is_mouse_in(self):
-        return point_is_in(self.mouse.x, self.mouse.y, self)
-    def distance_from_mouse(self):
-        return sqrt(self.mouse_offset_x()**2 + self.mouse_offset_y()**2)
-    def on_mouse_motion(self, x, y, dx, dy):
-        self.mouse.x = x
-        self.mouse.y = y
-        self.mouse.dx = dx
-        self.mouse.dy = dy
-    def on_mouse_press(self, x, y, button, modifiers):
-        self.mouse.x = x
-        self.mouse.y = y
-        self.mouse.left = button == pyglet.window.mouse.LEFT
-        self.mouse.middle = button == pyglet.window.mouse.MIDDLE
-        self.mouse.right = button == pyglet.window.mouse.RIGHT
-        self.key.shift = modifiers & pyglet.window.key.MOD_SHIFT
-        self.key.ctrl = modifiers & pyglet.window.key.MOD_CTRL
-        self.key.meta = (modifiers & pyglet.window.key.MOD_ALT or
-                         modifiers & pyglet.window.key.MOD_OPTION)
-        self.mouse.pressed = True
-    def on_mouse_release(self, x, y, button, modifiers):
-        self.mouse.x = x
-        self.mouse.y = y
-        self.mouse.left = button == pyglet.window.mouse.LEFT
-        self.mouse.middle = button == pyglet.window.mouse.MIDDLE
-        self.mouse.right = button == pyglet.window.mouse.RIGHT
-        self.key.shift = modifiers & pyglet.window.key.MOD_SHIFT
-        self.key.ctrl = modifiers & pyglet.window.key.MOD_CTRL
-        self.key.meta = (modifiers & pyglet.window.key.MOD_ALT or
-                         modifiers & pyglet.window.key.MOD_OPTION)
-        self.mouse.pressed = False
-    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
-        self.mouse.x = x
-        self.mouse.y = y
-        self.mouse.dx = dx
-        self.mouse.dy = dy
-        self.mouse.left = buttons & pyglet.window.mouse.LEFT
-        self.mouse.middle = buttons & pyglet.window.mouse.MIDDLE
-        self.mouse.right = buttons & pyglet.window.mouse.RIGHT
-        self.key.shift = modifiers & pyglet.window.key.MOD_SHIFT
-        self.key.ctrl = modifiers & pyglet.window.key.MOD_CTRL
-        self.key.meta = (modifiers & pyglet.window.key.MOD_ALT or
-                         modifiers & pyglet.window.key.MOD_OPTION)
-    def register(self, window):
-        self.mouse = MouseStruct()
-        self.key = ModKeyStruct()
-        @window.event
-        def on_mouse_motion(x, y, dx, dy):
-            self.on_mouse_motion(x, y, dx, dy)
-        @window.event
-        def on_mouse_press(x, y, button, modifiers):
-            self.on_mouse_press(x, y, button, modifiers)
-        @window.event
-        def on_mouse_release(x, y, button, modifiers):
-            self.on_mouse_release(x, y, button, modifiers)
-        @window.event
-        def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
-            self.on_mouse_drag(x, y, dx, dy, buttons, modifiers)
 
 
 class Color:
@@ -113,7 +24,7 @@ class Color:
         self.green = g
         self.blue = b
         self.alpha = a
-        self.tuple = (r, g, b, a)
+        self.tup = (r, g, b, a)
     def maybe_to_color(arg):
         if isinstance(arg, Color):
             return arg
@@ -133,13 +44,14 @@ class Rect:
 
     rect.addtobatch(batch, group=None) => None
     Call this function to draw the rect."""
-    def __init__(self, x, y, width, height, color):
+    def __init__(self, wf, x, y, width, height, color):
+        self.wf = wf
         self.x = x
         self.y = y
         self.width = width
         self.height = height
         self.color = Color.maybe_to_color(color)
-        self.image = pyglet.image.create(width, height, pyglet.image.SolidColorImagePattern(color.tuple))
+        self.image = pyglet.image.create(width, height, pyglet.image.SolidColorImagePattern(color.tup))
     def gettop(self):
         return self.y + self.height
     def getbot(self):
@@ -150,12 +62,17 @@ class Rect:
         return self.x + self.width
     def addtobatch(self, batch, group=None):
         self.sprite = pyglet.sprite.Sprite(self.image, self.x, self.y, batch=batch, group=group)
+    def draw(self, group=None):
+        self.sprite = pyglet.sprite.Sprite(self.image, self.x - self.wf.board.x,
+                                           self.y - self.wf.board.y, batch=self.wf.batch, group=group)
 
 class MenuItem:
-    def __init__(self, text, onclick, closer=True):
+    def __init__(self, wf, text, onclick, style, closer=True):
+        self.wf = wf
         self.text = text
         self.onclick = onclick
         self.closer = closer
+        self.style = style
     def __eq__(self, other):
         if type(other) is type(""):
             return self.text == other
@@ -183,71 +100,82 @@ class MenuItem:
         return self.text
     def __hash__(self):
         return hash(self.text)
-    def getlabel(self, x, y, fontface, fontsize, color, batch, group):
-        return pyglet.text.Label(self.text, fontface, fontsize, color=color, x=x, y=y, batch=batch, group=group, anchor_x='left', anchor_y='top')
-
-
-class MenuList:
-    def __init__(self):
-        self.items = []
-        self.sorted = True
-        self.textmap = {}
-    def __getitem__(self, i):
-        if i is None:
-            return None
-        if type(i) is type(1):
-            if not self.sorted:
-                self.sort()
-                self.sorted = True
-            return self.items[i]
+    def show(self):
+        if None in [self.y, self.fontsize]:
+            raise Exception("I can't show the label %s without knowing where it is, first." % self.text)
         else:
-            return self.nmap[i]
-    def __len__(self):
-        return len(self.items)
-    def index(self, thingus):
-        return self.items.index(thingus)
-    def insert_item(self, i, text, onclick, closer=True):
-        mi = MenuItem(text, onclick, closer)
-        self.textmap[text] = mi
-        self.items.insert(i, mi)
-        return mi
-    def reverse(self):
-        self.items.reverse()
-        return self
-        def sort(self):
-        # This just sorts by item name. I may want to make it sort by quantity eventually.
-            if not self.sorted:
-                self.items.sort()
-                self.sorted = True
-                return True # I did in fact sort
+            self.wf.addclickable(self)
+            self.visible = True
+    def hide(self):
+        self.visible = False
+        self.wf.rmclickable(self)
+    def set_pressed(self, b, m):
+        if b == pyglet.window.mouse.LEFT:
+            self.pressed = True
+    def unset_pressed(self, b, m):
+        if self.pressed:
+            if b == pyglet.window.mouse.LEFT:
+                self.onclick()
+    def getbot(self):
+        return self.y
+    def gettop(self):
+        if None in [self.y, self.fontsize]:
+            return None
+        else:
+            return self.y + self.fontsize
+        return pyglet.text.Label(self.text, fontface, fontsize, color=color, x=x, y=y, batch=batch, group=group, anchor_x='left', anchor_y='bottom')
+    def draw(self, group=None):
+        if self.visible:
+            if self.hovered:
+                color = self.style.fg_active
             else:
-                return False # no I didn't
-    def remove_item(self, i):
-        del self.item[i]
-    def sort(self):
-        # This just sorts by item name. I may want to make it sort by quantity eventually.
-        if not self.sorted:
-            self.items.sort()
+                color = self.style.fg_inactive
+            return pyglet.text.Label(self.text, self.style.fontface, self.style.fontsize,
+                                     color=color, x=self.x, y=self.y, batch=self.wf.batch,
+                                     group=group)
 
-class Menu(MouseListener):
-    def __init__(self, x, y, width, height, style):
+class Menu:
+    def __init__(self, wf, xprop, yprop, wprop, hprop, style):
+        self.wf = wf
         self.style = style
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+        if xprop < 0.0: # place lower-left corner (100*|xprop|)% from the right of the window
+            self.x = self.wf.window.width + (self.wf.window.width * xprop)
+        else: # place lower-left corner (100*|xprop|)% from the left of the window
+            self.x = self.wf.window.width * xprop
+        if yprop < 0.0:  # place lower-left corner (100*|yprop|)% from the top of the window
+            self.y = self.wf.window.height + (self.wf.window.height * yprop)
+        else: # place lower-left corner (100*|yprop|)% from the bottom of the window
+            self.y = self.wf.window.height * yprop
+        self.width = self.wf.window.width * abs(wprop)
+        self.height = self.wf.window.height * abs(hprop)
+        if wprop < 0.0: # width extends to the left
+            self.y -= self.width
+        if hprop < 0.0: # height extends downward
+            self.x -= self.height
         self.bgcolor = Color.maybe_to_color(style.bg_inactive)
         self.inactive_color = Color.maybe_to_color(style.fg_inactive)
         self.active_color = Color.maybe_to_color(style.fg_active)
         self.fontface = style.fontface
         self.fontsize = style.fontsize
         self.spacing = style.spacing
-        self.items = MenuList()
-        self.rect = Rect(x, y, width, height, self.bgcolor)
+        self.items = []
+        self.rect = Rect(self.wf, self.x, self.y, self.width, self.height, self.style.bgcolor)
+        self._scrolled_to = 0
+        self.visible = False
     def __getitem__(self, i):
-        return self.items[i]
+        return self.items.__getitem__(i)
+    def __delitem__(self, i):
+        return self.items.__delitem__(i)
+    def show(self):
+        self.visible = True
+        self.wf.clickables.append(self)
+        self.wf.hoverables.append(self)
+    def hide(self):
+        self.visible = False
+        self.wf.clickables.remove(self)
+        self.wf.hoverables.remove(self)
     def getstyle(self):
-        return Style(self.fontface, self.fontsize, self.spacing, self.bgcolor, self.bgcolor, self.inactive_color, self.active_color)
+        return self.style
     def getleft(self):
         return self.x
     def getbot(self):
@@ -260,53 +188,43 @@ class Menu(MouseListener):
         return self.width
     def getright(self):
         return self.x + self.width
-    def on_mouse_press(self, x, y, button, modifiers):
-        MouseListener.on_mouse_press(self, x, y, button, modifiers)
-        if self.is_mouse_in():
-            for item in self.items:
-                if self.moused_over_item(item):
-                    self.pick = (item, button, modifiers)
-                    return
-    def on_mouse_release(self, x, y, button, modifiers):
-        MouseListener.on_mouse_release(self, x, y, button, modifiers)
-        if self.is_mouse_in() and self.pick is not None:
-            if self.moused_over_item(self.pick[0]) and button == self.pick[1] and modifiers == self.pick[2]:
-                self.pick[0].onclick()
-        self.pick = None
     def insert_item(self, i, text, onclick, closer=True):
         if i > len(self.items):
             i = len(self.items)
-        added = self.items.insert_item(i, text, onclick, closer)
-        return added
-    def remove_item(self, i):
-        self.items.remove_item(i)
-    def is_mouse_over_item(self, item):
-        if type(item) is type(1):
-            item = self.items[item]
-        if None in [item.bot_rel, item.top_rel]:
-            return False
-        return item.bot_rel <= self.get_mouse_rel_y() <= item.top_rel
+        newitem = MenuItem(self.wf, text, onclick, self.style, closer)
+        self.items.insert(i, newitem)
+        return newitem
+    def remove_item(self, it):
+        self.items.remove_item(it)
     def addtobatch(self, batch, menugroup, labelgroup, start=0):
+        if not self.visible:
+            return False
         self.rect.addtobatch(batch, menugroup)
         items_height = 0
         draw_until = start
         while items_height < self.getheight() and len(self.items) > draw_until:
-            items_height += self.fontsize + self.spacing
+            items_height += self.style.fontsize + self.style.spacing
             draw_until += 1
-        prev_height = self.getheight
+        prev_height = self.gettop()
         for item in self.items:
-            item.top_rel = prev_height
-            item.bot_rel = prev_height - self.fontsize
+            item.top = prev_height - self.style.spacing
+            item.bot = prev_height - self.style.spacing - self.style.fontsize 
+            item.x = self.getleft()
+            item.y = item.bot
             prev_height -= self.fontsize + self.spacing
         i = start
         drawn = []
         while i < draw_until:
-            color = self.inactive_color.tuple
-            if self.is_mouse_in():
-                if self.is_mouse_over_item(i):
-                    color = self.active_color.tuple
-            drawn.append(self.items[i].getlabel(self.getleft(), self.items[i].top_rel + self.gettop(), self.fontface, self.fontsize, color, batch, labelgroup))
+            drawing = self.items[i]
+            drawing.show()
+            drawn.append(drawing.draw(labelgroup))
             i += 1
+        return True
+
+    def draw(self):
+        return self.addtobatch(self.wf.batch, self.wf.menugroup,
+                               self.wf.labelgroup, self._scrolled_to)
+
 
 class Spot:
     """Controller for the icon that represents a Place.
@@ -315,13 +233,14 @@ class Spot:
     place; at the given x and y coordinates on the screen; in the
     given graph of Spots. The Spot will be magically connected to the other
     Spots in the same way that the underlying Places are connected."""
-    def __init__(self, place, x, y, r, spotgraph):
+    def __init__(self, wf, place, x, y, r, imgname, spotgraph):
+        self.wf = wf
         self.place = place
         self.x = x
         self.y = y
         self.r = r
         self.spotgraph = spotgraph
-        self.img = pyglet.resource.image('orb.png')
+        self.img = self.wf.db.getimg(imgname)
     def __repr__(self):
         coords = "(%i,%i)" % (self.x, self.y)
         return "Spot at " + coords + " representing " + str(self.place)
@@ -341,18 +260,38 @@ class Spot:
         return iter([self.img, self.getleft(), self.getbot()])
 
 class SpotGraph:
-    places = {}
-    spots = []
-    edges = []
-    edges_to_draw = []
+    def __init__(self, wf, places=[], portals=[]):
+        self.wf = wf
+        self.w = wf.board.getwidth()
+        self.h = wf.board.getheight()
+        self.place2spot = {}
+        self.port2edge = {}
+        for place in places:
+            if self.wf.db.havespot(place):
+                self.place2spot[place] = self.wf.db.getspot(place.name)
+            else:
+                # just drop it somewhere.
+                # TODO change this out for something nicer
+                self.add_place_sensibly(place)
+                db.savespot(self.place2spot[place])
+        for port in portals:
+            if port.orig not in self.place2spot.keys():
+                if self.wf.db.havespot(port.orig):
+                    self.place2spot[port.orig] = self.wf.db.getspot(place.name)
+                    
+            self.port2edge[port] = (self.place2spot[port.orig], self.place2spot[port.dest])
     def add_spot(self, spot):
-        self.spots.append(spot)
-        self.places[spot.place] = spot
+        self.place2spot[spot.place] = spot
     def add_place(self, place, x, y, r=8):
         newspot = Spot(place, x, y, r, self)
         self.add_spot(newspot)
         self.connect_portals(newspot)
-    def are_connected(self, spot1, spot2):
+    def add_place_sensibly(self, place):
+        # TODO actually select a sensible spot
+        x = rand(0, self.w)
+        y = rand(0, self.h)
+        self.add_place(place, x, y, 8)
+    def spots_connected(self, spot1, spot2):
         return ((spot1, spot2) in self.edges) or ((spot2, spot1) in self.edges)
     def neighbors(self, spot1):
         r = []
@@ -362,9 +301,17 @@ class SpotGraph:
             if edge[1] is spot1:
                 r.append(edge[0])
         return r
-    def add_edge(self, spot1, spot2):
-        self.edges.append((spot1, spot2))
+    def add_portal(self, port):
+        if not self.place2spot.has_key(port.orig):
+            self.add_place_sensibly(port.orig)
+        if not self.place2spot.has_key(port.dest):
+            self.add_place_sensibly(port.dest)
+        spot1 = self.place2spot[port.orig]
+        spot2 = self.place2spot[port.dest]
+        edge = (spot1, spot2)
+        self.port2edge[port] = edge
         self.edges_to_draw.append(((spot1.x, spot1.y, spot2.x, spot2.y), (255, 255)*4))
+            
     def connect_portals(self, spot):
         for portal in spot.place.portals:
             ps = self.places.keys()
@@ -398,33 +345,39 @@ class Pawn:
     cover in a single frame. This should be calculated as the seconds
     of real time that the travel should take, divided by the game's
     screen-updates-per-second."""
-    trip_completion = 0.0
-    step = 0
-    route = None
-    # I think I want to redo the coordinates on these so that they are
-    # relative to the associated spot.
-    def __init__(self, start, spotgraph, img, item=None, x=None, y=None):
-        self.spotgraph = spotgraph
-        if item is not None:
-            self.item = item
+    # Coordinates should really be relative to the Board and not the
+    # uh, canvas? is that what they are called in pyglet?
+    def __init__(self, wf, start, img, x=None, y=None):
+        self.wf = wf
         if x is not None and y is not None:
             self.x = x
             self.y = y
-        elif isinstance(start, Spot):
-            self.curspot = start
+        else:
             self.x = start.x
             self.y = start.y
-        elif isinstance(start, Place):
-            self.curspot = self.spotgraph.places[start]
-            self.x = self.curspot.x
-            self.y = self.curspot.y
+        self.curspot = start
+        self.tup = (img, self.x, self.y)
+        self.route = []
+        self.step = 0
+        self.trip_completion = 0.0
+        self.visible = False
+    def show(self):
+        self.visible = True
+        self.wf.clickables.append(self)
+        self.wf.draggables.append(self)
+    def hide(self):
+        self.visible = False
+        self.wf.clickables.remove(self)
+        self.wf.draggables.remove(self)
+    def toggle(self):
+        if self.visible:
+            self.hide()
         else:
-            raise ValueError("No way to tell where to put this pawn.")
-        self.list = [img, self.x, self.y]
+            self.show()
     def curstep(self):
         if self.step >= len(self.route):
             return None
-        if self.route is not None:
+        elif len(self.route) > 0:
             return self.route[self.step]
     def curspeed(self):
         return self.curstep()[1]
@@ -439,14 +392,8 @@ class Pawn:
         return r
     def setx(self, newx):
         self.x = newx
-        self.list[1] = newx
     def sety(self, newy):
         self.y = newy
-        self.list[2] = newy
-    def gettup(self):
-        return tuple(self.list)
-    def __iter__(self):
-        return iter(self.list)
     def move(self, rep = 1):
         if self.route is None:
             return
@@ -473,56 +420,34 @@ class Pawn:
         self.setx(orig.x + x_traveled)
         self.sety(orig.y + y_traveled)
     def waypoint(self, dest, speed):
-        if self.route is None:
-            if isinstance(dest, Spot):
-                self.route = [(dest, speed)]
-            elif dest in self.spotgraph.places.keys():
-                self.route = [(self.spotgraph.places[dest],speed)]
-            else:
-                return
+        if len(self.route) == 0:
+            self.route = [(dest, speed)]
         else:
-            if isinstance(dest, Spot):
-                self.route.append((dest, speed))
-            elif dest in self.spotgraph.places.keys():
-                self.route.append((self.spotgraph.places[dest], speed))
-            else:
-                return
+            self.route.append((dest, speed))
     def cancel_route(self):
         """Canceling the route will let the Pawn reach the next node
         before stopping to await a new waypoint. If you want it
         stranded between two nodes, call delroute instead."""
         self.route = [self.curstep()]
     def delroute(self):
-        self.route = None
-    def extend_graph(self, spot):
-        """Add a new Spot to the graph, where the Place is displayed
-        on-screen at the given coordinates. Appropriate for when the
-        character learns of a new place they can go to."""
-        self.graph.append(spot)
-        self.places[spot.place] = spot
+        self.route = []
 
 class PawnTimer:
     def __init__(self, pawns):
         self.pawns = pawns
         self.delay = 0.0
-    def movepawns(self, ts, freq):
-        self.delay += ts - freq
-        # when the cumulative delay is longer than the time between frames,
-        # skip a frame to make up for it
-        reps = 1
-        while self.delay > freq:
-            reps += 1
-            self.delay -= freq
-        for pawn in self.pawns:
-            pawn.move(reps)
 
-class Canvas:
-    def __init__(self, width, height, texture, spotgraphs=[], pawns=[]):
+class Board:
+    def __init__(self, width, height, texture, spotgraphs, pawns):
         self.width = width
         self.height = height
         self.tex = texture
         self.spotgraphs = spotgraphs
         self.pawns = pawns
+    def getwidth(self):
+        return self.width
+    def getheight(self):
+        return self.height
 
 class Style:
     def __init__(self, name, fontface, fontsize, spacing, bg_inactive, bg_active, fg_inactive, fg_active):
@@ -536,17 +461,91 @@ class Style:
         self.fg_active = fg_active
 
 class WidgetFactory:
-    def __init__(self, db, window=None, batch=None):
+    # One window, batch, and WidgetFactory per board.
+    def __init__(self, db, gamestate, boardname, window, batch):
         self.db = db
-        if window is None:
-            self.window = pyglet.window.Window()
-        else:
-            self.window = window
-        if batch is None:
-            self.batch = pyglet.graphics.Batch()
-        else:
-            self.batch = batch
-
-class WidgetFactoryTestCase(unittest.TestCase):
-    def setUp(self):
-        
+        self.board = self.db.getboard(boardname)
+        self.gamestate = gamestate
+        self.window = window
+        self.batch = batch
+        self.made = []
+        self.hoverables = []
+        self.clickables = []
+        self.draggables = []
+        self.keyboard_listeners = []
+        self.delay = 0
+        self.pressed = None
+        self.hovered = None
+        self.grabbed = None
+    def movepawns(self, ts, freq):
+        self.delay += ts - freq
+        # when the cumulative delay is longer than the time between frames,
+        # skip a frame to make up for it
+        reps = 1
+        while self.delay > freq:
+            reps += 1
+            self.delay -= freq
+        for pawn in self.pawns:
+            pawn.move(reps)
+    def on_draw(self):
+        for widget in self.made:
+            widget.addtobatch(self.batch)
+    def on_key_press(self, sym, mods):
+        for listener in self.keyboard_listeners:
+            if sym in listener.listen_to_keys:
+                if mods & listener.listen_to_mods > 0:
+                    listener.keypress(sym, mods)
+        # self.mouse.left = button == pyglet.window.mouse.LEFT
+        # self.mouse.middle = button == pyglet.window.mouse.MIDDLE
+        # self.mouse.right = button == pyglet.window.mouse.RIGHT
+        # self.key.shift = modifiers & pyglet.window.key.MOD_SHIFT
+        # self.key.ctrl = modifiers & pyglet.window.key.MOD_CTRL
+        # self.key.meta = (modifiers & pyglet.window.key.MOD_ALT or
+        #                  modifiers & pyglet.window.key.MOD_OPTION)
+    def on_mouse_motion(self, x, y, dx, dy):
+        for listener in self.hoverables:
+            if point_is_in(x, y, listener):
+                listener.set_hover()
+                self.hover = listener
+                return
+        if self.hover is not None:
+            self.hover.unset_hover()
+            self.hover = None
+    def on_mouse_press(self, x, y, button, modifiers):
+        for listener in self.clickables:
+            if button in listener.listen_to_buttons:
+                if point_is_in(x, y, listener):
+                    listener.set_pressed(button, mods)
+                    self.pressed = listener
+                    return
+        for listener in self.draggables:
+            if button in listener.listen_to_buttons:
+                if point_is_in(x, y, listener):
+                    listener.set_grabbed(button, mods)
+                    self.grabbed = listener
+                    return
+    def on_mouse_release(self, x, y, button, modifiers):
+        if self.pressed is not None:
+            self.pressed.unset_pressed(button, modifiers)
+            self.pressed = None
+    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+        if self.grabbed is not None:
+            self.grabbed.unset_grabbed(buttons, modifiers)
+            self.grabbed = None
+    def mkmenu(self, menuname):
+        menu = self.db.getmenu(menuname)
+        if menu not in self.made:
+            self.made.append(menu)
+        if menu.visible:
+            self.hoverables.append(menu)
+            self.clickables.append(menu)
+    def mkpawn(self, pawnname, show=True):
+        pawn = Pawn(*self.db.getpawn(pawnname))
+        if pawn not in self.made:
+            self.made.append(pawn)
+        # I haven't really decided how I want the player to interact
+        # with pawns yet.  I'm guessing they should be clickable and
+        # draggable. I'm debating whether they should be hoverable as
+        # well.
+        if show:
+            pawn.show()
