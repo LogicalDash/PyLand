@@ -103,6 +103,11 @@ class Database:
         self.colormap = {}
 
         self.contained_in = {} # This maps strings to other strings, not to Python objects.
+        self.contents = {} # ditto
+
+        # This maps strings to functions,
+        # giving a user with access to the database the ability to
+        # call that function. Not sure how yet.
         self.func = { 'saveplace' : self.saveplace,
                       'getplace' : self.getplace,
                       'delplace' : self.delplace,
@@ -253,10 +258,8 @@ class Database:
     def loadplace(self, name):
         if not self.knowplace(name):
             return None
-        self.readcursor.execute("select name from portal where from_place=?;", (name,))
-        portals = self.readcursor.fetchall()
-        self.readcursor.execute("select contained from containment where container=?;", (name,))
-        contents = self.readcursor.fetchall()
+        portals = self.getportal(name) # should return an iterable
+        contents = self.getcontents(name)
         p = Place(name) # I think I might have to handle nulls special
         self.placemap[name] = p
         for port in portals:
@@ -438,6 +441,10 @@ class Database:
         except IndexError:
             return None
         self.contained_in[contained] = item
+        if self.contents.has_key(item):
+            self.contents[item].append(contained)
+        else:
+            self.contents[item] = [item]
         return item
 
     def getcontainment(self, contained):
@@ -457,6 +464,34 @@ class Database:
             self.writecursor.execute(sqlitefmtstr, [container] + keeps)
         if commit:
             self.conn.commit()
+
+    def getcontainer(self, contained):
+        return self.getcontainment(contained)
+
+    def knowcontents(self, container):
+        self.readcursor.execute("select count(*) from containment where container=?;",
+                                (container,))
+        return self.readcursor.fetchone()[0] > 0
+
+    def havecontents(self, container):
+        return self.knowcontents(container.name)
+
+    def loadcontents(self, container):
+        self.readcursor.execute("select contained from containment where container=?;",
+                                (container,))
+        c = []
+        for contained in self.readcursor:
+            if not self.contained_in.has_key(contained[0]):
+                self.contained_in[contained[0]] = container
+            c.append(contained[0])
+        self.contents[container] = c
+        return c
+
+    def getcontents(self, container):
+        if self.contents.has_key(container):
+            return self.contents[container]
+        else:
+            return self.loadcontents(container)
 
     def knowattribute(self, name):
         self.readcursor.execute("select count(*) from attribute where name=?;", (name,))
@@ -860,6 +895,8 @@ class Database:
                     raise Exception("No portal connecting %s to %s." % (orig_or_name, dest))
             else:
                 raise Exception("No portals from %s." % orig_or_name)
+        elif self.portalorigdestmap.has_key(orig_or_name):
+            return self.portalorigdestmap[orig_or_name].values() # actual Portal objects
         else:
             return self.loadportal(orig_or_name)
 
