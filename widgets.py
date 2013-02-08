@@ -1,16 +1,15 @@
-# This file is for the controllers for the things that show up on the screen when you play.
+# This file is for the controllers for the things that show up on the
+# screen when you play.
 import pyglet
 from place import Place
 from math import floor, sqrt
 
 def point_is_in(x, y, listener):
-    return x >= listener.getleft() and x <= listener.getright() and y >= listener.getbot() and y <= listener.gettop()
+    return x >= listener.getleft() and x <= listener.getright() \
+        and y >= listener.getbot() and y <= listener.gettop()
 
 def point_is_between(x, y, x1, y1, x2, y2):
     return x >= x1 and x <= x2 and y >= y1 and y <= y2
-
-
-
 
 class Color:
     """Color(red=0, green=0, blue=0, alpha=255) => color
@@ -51,7 +50,8 @@ class Rect:
         self.width = width
         self.height = height
         self.color = Color.maybe_to_color(color)
-        self.image = pyglet.image.create(width, height, pyglet.image.SolidColorImagePattern(color.tup))
+        self.image = pyglet.image.create(width, height,
+                                         pyglet.image.SolidColorImagePattern(color.tup))
     def gettop(self):
         return self.y + self.height
     def getbot(self):
@@ -61,10 +61,12 @@ class Rect:
     def getright(self):
         return self.x + self.width
     def addtobatch(self, batch, group=None):
-        self.sprite = pyglet.sprite.Sprite(self.image, self.x, self.y, batch=batch, group=group)
+        self.sprite = pyglet.sprite.Sprite(self.image, self.x, self.y,
+                                           batch=batch, group=group)
     def draw(self, group=None):
         self.sprite = pyglet.sprite.Sprite(self.image, self.x - self.wf.board.x,
-                                           self.y - self.wf.board.y, batch=self.wf.batch, group=group)
+                                           self.y - self.wf.board.y,
+                                           batch=self.wf.batch, group=group)
 
 class MenuItem:
     def __init__(self, wf, text, onclick, style, closer=True):
@@ -102,7 +104,8 @@ class MenuItem:
         return hash(self.text)
     def show(self):
         if None in [self.y, self.fontsize]:
-            raise Exception("I can't show the label %s without knowing where it is, first." % self.text)
+            raise Exception("I can't show the label %s without knowing"
+                            " where it is, first." % self.text)
         else:
             self.wf.addclickable(self)
             self.visible = True
@@ -123,7 +126,9 @@ class MenuItem:
             return None
         else:
             return self.y + self.fontsize
-        return pyglet.text.Label(self.text, fontface, fontsize, color=color, x=x, y=y, batch=batch, group=group, anchor_x='left', anchor_y='bottom')
+        return pyglet.text.Label(self.text, fontface, fontsize, color=color,
+                                 x=x, y=y, batch=batch, group=group,
+                                 anchor_x='left', anchor_y='bottom')
     def draw(self, group=None):
         if self.visible:
             if self.hovered:
@@ -135,14 +140,17 @@ class MenuItem:
                                      group=group)
 
 class Menu:
-    def __init__(self, wf, xprop, yprop, wprop, hprop, style):
+    def __init__(self, wf, name, xprop, yprop, wprop, hprop, style):
+        self.name = name
         self.wf = wf
         self.style = style
-        if xprop < 0.0: # place lower-left corner (100*|xprop|)% from the right of the window
+        if xprop < 0.0: # place lower-left corner (100*|xprop|)% from
+                        # the right of the window
             self.x = self.wf.window.width + (self.wf.window.width * xprop)
         else: # place lower-left corner (100*|xprop|)% from the left of the window
             self.x = self.wf.window.width * xprop
-        if yprop < 0.0:  # place lower-left corner (100*|yprop|)% from the top of the window
+        if yprop < 0.0:  # place lower-left corner (100*|yprop|)% from
+                         # the top of the window
             self.y = self.wf.window.height + (self.wf.window.height * yprop)
         else: # place lower-left corner (100*|yprop|)% from the bottom of the window
             self.y = self.wf.window.height * yprop
@@ -159,7 +167,8 @@ class Menu:
         self.fontsize = style.fontsize
         self.spacing = style.spacing
         self.items = []
-        self.rect = Rect(self.wf, self.x, self.y, self.width, self.height, self.style.bgcolor)
+        self.rect = Rect(self.wf, self.x, self.y, self.width, self.height,
+                         self.style.bgcolor)
         self._scrolled_to = 0
         self.visible = False
     def __getitem__(self, i):
@@ -260,7 +269,10 @@ class Spot:
         return iter([self.img, self.getleft(), self.getbot()])
 
 class SpotGraph:
-    def __init__(self, wf, places=[], portals=[]):
+    # igraph has a Layout class that is quite similar.
+    # It automatically lays out graphs for me. I should work out a way to incorporate it.
+    def __init__(self, wf, name, places=[], portals=[]):
+        self.name = name
         self.wf = wf
         self.w = wf.board.getwidth()
         self.h = wf.board.getheight()
@@ -279,7 +291,8 @@ class SpotGraph:
                 if self.wf.db.havespot(port.orig):
                     self.place2spot[port.orig] = self.wf.db.getspot(place.name)
                     
-            self.port2edge[port] = (self.place2spot[port.orig], self.place2spot[port.dest])
+            self.port2edge[port] = (self.place2spot[port.orig], \
+                                    self.place2spot[port.dest])
     def add_spot(self, spot):
         self.place2spot[spot.place] = spot
     def add_place(self, place, x, y, r=8):
@@ -347,15 +360,23 @@ class Pawn:
     screen-updates-per-second."""
     # Coordinates should really be relative to the Board and not the
     # uh, canvas? is that what they are called in pyglet?
-    def __init__(self, wf, start, img, x=None, y=None):
+    def __init__(self, wf, thing, img, board, x, y, place):
         self.wf = wf
+        self.thing = thing
+        self.img = img
+        self.board = board
         if x is not None and y is not None:
             self.x = x
             self.y = y
         else:
             self.x = start.x
             self.y = start.y
-        self.curspot = start
+        if type(place) is str:
+            self.curspot = self.wf.db.getspot(place)
+        elif isinstance(place, Place):
+            self.curspot = self.wf.db.getspot(place.name)
+        elif isinstance(place, Spot):
+            self.curspot = place
         self.tup = (img, self.x, self.y)
         self.route = []
         self.step = 0
@@ -438,19 +459,21 @@ class PawnTimer:
         self.delay = 0.0
 
 class Board:
-    def __init__(self, width, height, texture, spotgraphs, pawns):
+    def __init__(self, wf, width, height, texture):
+        self.wf = wf
         self.width = width
         self.height = height
         self.tex = texture
-        self.spotgraphs = spotgraphs
-        self.pawns = pawns
+        self.spotgraphs = []
+        self.pawns = []
     def getwidth(self):
         return self.width
     def getheight(self):
         return self.height
 
 class Style:
-    def __init__(self, name, fontface, fontsize, spacing, bg_inactive, bg_active, fg_inactive, fg_active):
+    def __init__(self, name, fontface, fontsize, spacing,
+                 bg_inactive, bg_active, fg_inactive, fg_active):
         self.name = name
         self.fontface = fontface
         self.fontsize = fontsize
@@ -464,11 +487,19 @@ class WidgetFactory:
     # One window, batch, and WidgetFactory per board.
     def __init__(self, db, gamestate, boardname, window, batch):
         self.db = db
+        db.wf = self
         self.board = self.db.getboard(boardname)
         self.gamestate = gamestate
         self.window = window
         self.batch = batch
-        self.made = []
+        self.menugroup = pyglet.graphics.Group()
+        self.labelgroup = pyglet.graphics.Group()
+        self.pawngroup = pyglet.graphics.Group()
+        self.spotgroup = pyglet.graphics.Group()
+        self.menusmade = []
+        self.labelsmade = []
+        self.pawnsmade = []
+        self.spotsmade = []
         self.hoverables = []
         self.clickables = []
         self.draggables = []
@@ -532,20 +563,58 @@ class WidgetFactory:
         if self.grabbed is not None:
             self.grabbed.unset_grabbed(buttons, modifiers)
             self.grabbed = None
-    def mkmenu(self, menuname):
-        menu = self.db.getmenu(menuname)
-        if menu not in self.made:
-            self.made.append(menu)
-        if menu.visible:
-            self.hoverables.append(menu)
-            self.clickables.append(menu)
-    def mkpawn(self, pawnname, show=True):
-        pawn = Pawn(*self.db.getpawn(pawnname))
-        if pawn not in self.made:
-            self.made.append(pawn)
-        # I haven't really decided how I want the player to interact
-        # with pawns yet.  I'm guessing they should be clickable and
-        # draggable. I'm debating whether they should be hoverable as
-        # well.
-        if show:
-            pawn.show()
+    def extract_name(it, clas):
+        if type(it) is str:
+            return it
+        elif isinstance(it, clas):
+            return it.name
+        else:
+            raise TypeError("I need a %s or the name of one" % str(clas))
+    def open_spot(self, placen):
+        s = self.db.getspot(placen)
+        self.spotsmade.append(s)
+        return s
+    def close_spot(self, name_or_spot):
+        if type(name_or_spot) is str:
+            spot = self.db.getspot(name_or_spot)
+            name = name_or_spot
+        elif isinstance(name_or_spot, Spot):
+            spot = name_or_spot
+            name = name_or_spot.place.name
+        elif isinstance(name_or_spot, Place):
+            spot = self.db.getspot(name_or_spot.name)
+            name = name_or_spot.name
+        else:
+            raise TypeError("I need a name of a place, a place, or the spot that represents it")
+        self.db.savespot(spot)
+        del self.db.spotmap[name]
+        self.spotsmade.remove(spot)
+    def open_menu(self, name):
+        menu = self.db.getmenu(name)
+        self.menusmade.append(menu)
+        return menu
+    def close_menu(self, name_or_menu):
+        if type(name_or_menu) is str:
+            menu = self.db.getmenu(name_or_menu)
+            name = name_or_menu
+        elif isinstance(name_or_menu, Menu):
+            menu = name_or_menu
+            name = name_or_menu.name
+        else:
+            raise TypeError("I need a menu's name or a menu proper")
+        # saving the opened-ness of windows when 
+        self.db.savemenu(menu)
+        del self.db.menumap[name]
+        self.menusmade.remove(menu)
+    def open_pawn(self, thing_or_name):
+        if type(thing) is str:
+            thingn = thing
+        elif isinstance(thing, Thing):
+            thingn = thing.name
+        else:
+            raise TypeError("I need a thing or the name of one")
+        pawn = self.db.getpawn(thingn, self.board)
+        self.pawnsmade.append(pawn)
+        return pawn
+    def close_pawn(self, thing_or_name):
+        

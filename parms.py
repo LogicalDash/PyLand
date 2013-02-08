@@ -1,3 +1,7 @@
+# TODO: give a board to every pawn and spot
+# TODO: remove spotgraph
+# TODO: redo pawn.waypoint(...) so it looks in the database for a spot to go to
+# TODO: remove references to spotgraph from spot and rewrite appropriately
 class DefaultParameters:
     def addstub(self, stub):
         exec('def %s():\n\tpass\n\nself.stubs["%s"]=%s' % (stub,) * 3)

@@ -67,9 +67,10 @@ class CompoundCheck(BoolCheck):
         return True
 
 class AttrCheck(CompoundCheck):
-    def __init__(self, typ=None, vals=[], lower=None, upper=None):
+    def __init__(self, name, typ=None, vals=[], lower=None, upper=None):
         # Slowness may result if typs or vals have redundancies. I'd
         # like to check for that.
+        self.name = name
         self.typcheck = TrueCheck()
         self.lstcheck = TrueCheck()
         self.locheck = TrueCheck()
