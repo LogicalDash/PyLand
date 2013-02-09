@@ -1,12 +1,11 @@
-import sys, os
-sys.path.append(os.curdir)
-
 import sqlite3
 from place import Place
 from portal import Portal
+from route import Route
 from widgets import *
 from thing import Thing
 from attrcheck import *
+from dimension import Dimension
 
 defaultCommit=True
 testDB=False
@@ -100,12 +99,8 @@ class Database:
     in the list.
 
     """
-    typmap = { 'str' : str,
-               'int' : int,
-               'float' : float,
-               'bool' : bool }
+
     def __init__(self, dbfile, xfuncs = {}, defaultCommit=True):
-        self.wf = None
         self.conn = sqlite3.connect(dbfile)
         self.readcursor = self.conn.cursor()
         self.writecursor = self.conn.cursor()
@@ -119,7 +114,7 @@ class Database:
         self.thingmap = {}
         self.spotmap = {}
         self.imgmap = {}
-        self.spotgraphmap = {}
+        self.dimmap = {}
         self.boardmap = {}
         self.menumap = {}
         self.menuitemmap = {}
@@ -137,8 +132,8 @@ class Database:
                         Portal : self.portalmap,
                         Thing : self.thingmap,
                         Spot : self.spotmap,
-                        pyglet.resource.Image : self.imgmap,
-                        SpotGraph : self.spotgraphmap,
+                        pyglet.resource.image : self.imgmap,
+                        Dimension : self.dimmap,
                         Board : self.boardmap,
                         Menu : self.menumap,
                         MenuItem : self.menuitemmap,
@@ -160,7 +155,10 @@ class Database:
                       'saveattribute' : self.saveattribute,
                       'writeattribute' : self.writeattribute,
                       'delattribute' : self.delattribute }
-        self.typ = typmap
+        self.typ = { 'str' : str,
+                     'int' : int,
+                     'float' : float,
+                     'bool' : bool }
         self.func.update(xfuncs)
     def __del__(self):
         self.readcursor.close()
@@ -175,19 +173,20 @@ class Database:
         self.writecursor.execute("create table place (name text primary key, foreign key(name) references item(name));")
         self.writecursor.execute("create table thing (name text primary key, foreign key(name) references item(name));")
         self.writecursor.execute("create table portal (name text primary key, from_place, to_place, foreign key(name) references item(name), foreign key(from_place) references place(name), foreign key(to_place) references place(name), check(from_place<>to_place));")
+        self.writecursor.execute("create table dimension (name text primary key, foreign key(name) references item(name));")
         self.writecursor.execute("create table containment (contained, container, foreign key(contained) references item(name), foreign key(container) references item(name), check(contained<>container), primary key(contained));")
-        self.writecursor.execute("create table attribute (name text primary key, type text, lower, upper;")
+        self.writecursor.execute("create table attribute (name text primary key, type text, lower, upper);")
         self.writecursor.execute("create table attribution (attribute, attributed_to, value, foreign key(attribute) references permitted_values(attribute), foreign key(attributed_to) references item(name), foreign key(value) references permitted_values(value), primary key(attribute, attributed_to));")
         self.writecursor.execute("create table permitted (attribute, value, foreign key(attribute) references attribute(name), primary key(attribute, value));")
         self.writecursor.execute("create table img (name text primary key, path, rltile);")
         self.writecursor.execute("create table board (name text primary key, width integer, height integer, wallpaper, foreign key(wallpaper) references image(name));")
-        self.writecursor.execute("create table spotgraph (name text primary key, board, foreign key(board) references board(name));")        
-        self.writecursor.execute("create table spot (place primary key, x, y, r, spotgraph, foreign key(place) references place(name), foreign key(spotgraph) references spotgraph(name));")
-        self.writecursor.execute("create table pawn (item text, board text, img text, x integer, y integer, spot text, foreign key(img) references img(name), foreign key(item) references item(name), foreign key(spot) references place(name), primary key(item, board));")
+        self.writecursor.execute("create table spot (place text, board text, x integer, y integer, r integer, foreign key(place) references place(name), foreign key(board) references board(name), primary key(place, board));")
+        self.writecursor.execute("create table pawn (thing text, board text, img text, spot text, foreign key(img) references img(name), foreign key(thing) references thing(name), foreign key(spot) references spot(place), primary key(thing, board));")
         self.writecursor.execute("create table color (name text primary key, red integer not null check(red between 0 and 255), green integer not null check(green between 0 and 255), blue integer not null check(blue between 0 and 255));")
         self.writecursor.execute("create table style (name text primary key, fontface text not null, fontsize integer not null, spacing integer, bg_inactive, bg_active, fg_inactive, fg_active, foreign key(bg_inactive) references color(name), foreign key(bg_active) references color(name), foreign key(fg_inactive) references color(name), foreign key(fg_active) references color(name));")
         self.writecursor.execute("create table menu (name text primary key, x float not null, y float not null, width float not null, height float not null, style text default 'Default', visible boolean default 0, foreign key(style) references style(name));")
         self.writecursor.execute("create table menuitem (menu text, idx integer, text text, onclick text, closer boolean, foreign key(menu) references menu(name), primary key(menu, idx));")
+        self.writecursor.execute("create table step (thing text, ord integer, destination text, progress float, portal text, foreign key(thing) references thing(name), foreign key(portal) references portal(name), foreign key(destination) references place(name), check(progress>=0.0), check(progress<1.0), primary key(thing, ord, destination));")
 
         # I think maybe I will want to actually store pawns in the database eventually.
         # Later...
@@ -213,6 +212,8 @@ class Database:
         self.mkmanything(f(default.things), commit=False)
         self.mkmanyattribute(f(default.attributes), commit=False)
         self.mkmanyattribution(f(default.attributions), commit=False)
+        self.mkimg('defaultwall', 'wallpape.jpg', commit=False)
+        self.mkboard('Default', 800, 600, 'defaultwall', commit=False)
         if commit:
             self.conn.commit()
 
@@ -275,6 +276,13 @@ class Database:
 
     def know(self, tname, keyexp, keytup):
         return self.knowany(tname, keyexp, [keytup])
+
+    def knowdimension(name):
+        self.readcursor.execute("select count(*) from dimension where name=?;")
+        return self.readcursor.fetchone()[0] == 1
+
+    def havedimension(dim):
+        return self.knowdimension(dim.name)
 
     def knowplace(self, name):
         self.readcursor.execute("select count(*) from place where name=?;",
@@ -375,8 +383,10 @@ class Database:
             self.conn.commit()
 
     def mkmanything(self, thingtups, commit=defaultCommit):
-        self.mkmany("item", sane, commit=False)
-        self.mkmany("thing", sane, commit=False)
+        thingen = [ (thing[0],) for thing in thingtups ]
+        self.mkmany("item", thingen, commit=False)
+        self.mkmany("thing", thingen, commit=False)
+        self.mkmany("containment", thingtups, commit=False)        
         if commit:
             self.conn.commit()
 
@@ -855,6 +865,7 @@ class Database:
 
     def loadattributionson(self, item):
         self.readcursor.execute("select attr, val from attribution where attributed_to=?;", (item,))
+        r = {}
         for row in self.readcursor:
             if self.getattribute(row[0]).check(row[1]):
                 self.attrvalmap[item][row[0]] = row[1]
@@ -870,11 +881,9 @@ class Database:
         else:
             return self.loadattribution(attr, item)
 
-    def getattributiondict(self, item):
+    def getattributionson(self, item):
         if not self.attrvalmap.has_key(item):
-            self.readcursor.execute("select attribute, value where attributed_to=?;", (item,))
-            for (attrib, val) in self.readcursor:
-                self.attrvalmap[item][attrib] = val
+            self.loadattributionson(item)
         return self.attrvalmap[item]
 
     def knowportal(self, orig_or_name, dest=None):
@@ -945,10 +954,10 @@ class Database:
         row = self.readcursor.fetchone()
         if row is None:
             return None
-        else:
-            port = Portal(name, row[0], row[1])
-            self.portalmap[name] = port
-            return port
+        attdict = self.getattributionson(name)
+        port = Portal(name, row[0], row[1], attdict)
+        self.portalmap[name] = port
+        return port
 
     def getportal(self, orig_or_name, dest=None):
         if self.portalmap.has_key(orig_or_name):
@@ -1008,40 +1017,38 @@ class Database:
         else:
             return self.knowspot(place.name)
 
-    def mkspot(self, place, board, x, y, r, graph, commit=defaultCommit):
-        self.writecursor.execute("insert into spot values (?, ?, ?, ?, ?);",
-                                 (place, board, x, y, r, graph))
+    def mkspot(self, place, board, x, y, r, commit=defaultCommit):
+        self.writecursor.execute("insert into spot values (?, ?, ?, ?);",
+                                 (place, board, x, y, r))
         if commit:
             self.conn.commit()
 
     def mkmanyspot(self, tups, commit=defaultCommit):
         self.mkmany("spot", tups, commit)
 
-    def updspot(self, place, board, x, y, r, graph, commit=defaultCommit):
-        self.writecursor.execute("update spot set x=?, y=?, r=?, spotgraph=? where place=? and board=?;"
-                                 (x, y, r, graph, place, board))
+    def updspot(self, place, board, x, y, r, commit=defaultCommit):
+        self.writecursor.execute("update spot set x=?, y=?, r=? where place=? and board=?;",
+                                 (x, y, r, place, board))
         if commit:
             self.conn.commit()
 
-    def writespot(self, place, x, y, r, graph, commit=defaultCommit):
+    def writespot(self, place, x, y, r, commit=defaultCommit):
         if self.knowspot(place):
-            self.updspot(place, x, y, r, graph, commit)
+            self.updspot(place, x, y, r, commit)
         else:
-            self.mkspot(place, x, y, r, graph, commit)
+            self.mkspot(place, x, y, r, commit)
 
     def savespot(self, spot, commit=defaultCommit):
-        self.writespot(spot.place.name, spot.x, spot.y, spot.r, spot.spotgraph.name, commit)
+        self.writespot(spot.place.name, spot.x, spot.y, spot.r, commit)
         self.new.remove(spot)
         self.altered.remove(spot)
 
-    def loadspot(self, place):
-        if self.wf is None:
-            raise Exception("Can't load a Spot with no WidgetFactory.")
-        self.readcursor.execute("select x, y, r, spotgraph from spot where place=? and board=?;",
-                                (place, self.wf.board.name))
-        spottup = self.readcursor.fetchone()
-        spottup[3] = self.getspotgraph(spot[3])
-        self.spotmap[place] = self.wf.mkspot(*spottup)
+    def loadspot(self, placen, boardn):
+        self.readcursor.execute("select x, y, r from spot where place=? and board=?;",
+                                (placen, boardn))
+        spottup = (self.getplace(placen), self.getboard(boardn)) + self.readcursor.fetchone()
+        spot = Spot(*spottup)
+        self.spotmap[place] = spot
         return spot
 
     def getspot(self, placen):
@@ -1054,24 +1061,7 @@ class Database:
         self.writecursor.execute("delete from spot where place=?;", (place,))
         if commit:
             self.conn.commit()
-            
-    def knowspotgraph(self, name):
-        self.readcursor.execute("select count(*) from spotgraph where name=?;",
-                                (name,))
-        return self.readcursor.fetchone()[0] > 1
 
-    def knowanyspotgraph(self, names):
-        return self.knowany("spotgraph", "(name)", names)
-
-    def knowallspotgraph(self, names):
-        return self.knowall("spotgraph", "(name)", names)
-
-    def havespotgraph(self, sg):
-        return self.knowspotgraph(sg.name)
-
-    def mkspotgraph(self, name):
-        
-        
     def knowimg(self, name):
         self.readcursor.execute("select count(*) from img where name=?;", (name,))
         return self.readcursor.fetchone()[0] == 1
@@ -1124,7 +1114,7 @@ class Database:
         return tex
 
     def loadimg(self, name):
-        self.readcursor.execute("select * from imgfile where name=?", (name,))
+        self.readcursor.execute("select * from img where name=?", (name,))
         row = self.readcursor.fetchone()
         if row is None:
             return
@@ -1251,7 +1241,7 @@ class Database:
                                 (name,))
         tup = self.readcursor.fetchone()
         wall = self.getimg(tup[2])
-        board = Board(self.wf, tup[0], tup[1], wall)
+        board = Board(tup[0], tup[1], wall)
         self.boardmap[name] = board
         return board
 
@@ -1278,9 +1268,9 @@ class Database:
     def havepawn(self, pawn):
         return self.knowpawn(pawn.item, pawn.board)
 
-    def mkpawn(self, item, board, img, x, y, spot, commit=defaultCommit):
+    def mkpawn(self, item, board, img, spot, commit=defaultCommit):
         self.writecursor.execute("insert into pawn values (?, ?, ?, ?, ?, ?);",
-                                 (item, img, board, x, y, spot))
+                                 (item, img, board, spot))
         if commit:
             self.conn.commit()
 
@@ -1307,7 +1297,8 @@ class Database:
         item = self.getitem(itemn)
         board = self.getboard(boardn)
         spot = self.getspot(spotn)
-        pawn = Pawn(self.wf, item, img, board, x, y, spot)
+        pawn = Pawn(item, img, board, x, y, spot)
+        pawn.route = self.getroute(pawn)
         self.pawnmap[boardn][itemn] = pawn
         return pawn
 
@@ -1331,6 +1322,41 @@ class Database:
         right = "?);"
         querystr = left + middle + right
         self.writecursor.execute(querystr, keeps)
+        if commit:
+            self.conn.commit()
+
+    # Graphs may be retrieved for either a board or a
+    # dimension. Normally one board should represent one dimension,
+    # but I'm keeping them separate because using the same object for
+    # game logic and gui logic rubs me the wrong way.
+
+    def knowroute(self, thingn):
+        self.readcursor.execute("select count(*) from step where thing=? limit 1;", (thingn,))
+        return self.readcursor.fetchone()[0]==1
+
+    def haveroute(self, pawn):
+        return self.knowroute(pawn.thing.name)
+
+    def loadroute(self, thingn, destn):
+        self.readcursor.execute("select ord, progress, portal from step where thing=?"
+                                " and route_destination=?;", (thingn, destn))
+        steps = self.readcursor.fetchall()
+        thing = self.getthing(thingn)
+        dest = self.getplace(destn)
+        route = Route(steps, thing, dest)
+        self.routemap[thingn][destn] = route
+        return route
+
+    def getroute(self, thingn, destn):
+        if self.routemap.has_key(thingn) and self.routemap[thingn].has_key(destn):
+            return self.routemap[thingn][destn]
+        else:
+            return self.loadroute(thingn)
+
+    def delroute(self, thingn, destn, commit=defaultCommit):
+        if self.routemap.has_key(thingn) and self.routemap[thingn].has_key(destn):
+            del self.routemap[thingn]
+        self.writecursor.execute("delete from step where thing=? and destination=?;", (thingn, destn))
         if commit:
             self.conn.commit()
 
@@ -1506,8 +1532,9 @@ class Database:
     def loadmenu(self, name):
         if not self.knowmenu(name):
             raise ValueError("Menu does not exist: %s" % name)
-        self.readcursor.execute("select x, y, width, height, style, visible from menu where name=?;", (name,))
-        menu = self.wf.mkmenu(*self.readcursor.fetchone())
+        self.readcursor.execute("select name, x, y, width, height, style, visible from menu where name=?;",
+                                (name,))
+        menu = Menu(*self.readcursor.fetchone())
         self.menumap[name] = menu
         return menu
         

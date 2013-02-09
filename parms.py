@@ -1,10 +1,10 @@
 # TODO: give a board to every pawn and spot
-# TODO: remove spotgraph
 # TODO: redo pawn.waypoint(...) so it looks in the database for a spot to go to
 # TODO: remove references to spotgraph from spot and rewrite appropriately
+# TODO: some way of distinguishing between routes on different game boards that doesn't rely on the Board class, since that is a widget and not a game logic thing
 class DefaultParameters:
     def addstub(self, stub):
-        exec('def %s():\n\tpass\n\nself.stubs["%s"]=%s' % (stub,) * 3)
+        exec('def %s():\n\tpass\n\nself.stubs["%s"]=%s' % (stub, stub, stub))
     def __init__(self):
         self.stubs = {}
         stubs = ['start_new_map', 'open_map', 'save_map', 'quit_map_editor', 'select_all', 'copy', 'paste', 'delete', 'new_custom_place', 'new_workplace', 'new_lair', 'new_commons', 'new_custom_thing', 'new_decoration', 'new_clothing', 'new_tool', 'show_game_menu', 'show_editor_menu', 'show_place_menu', 'show_thing_menu']
@@ -33,31 +33,31 @@ class DefaultParameters:
                             'Place' : 'show_place_menu',
                             'Thing' : 'show_thing_menu' }
         # I'm going to have the menu bar on the left of the screen. For convenience.
-        self.menus = [(('Game'), (0.1, -0.02, 0.8, -0.2, 'Default', False)),
-                      (('Editor'), (0.1, -0.24, 0.8, -0.2, 'Default', False)),
-                      (('Place'), (0.1, -0.46, 0.8, -0.2, 'Default', False)),
-                      (('Thing'), (0.1, -0.68, 0.8, -0.2, 'Default', False)),
-                      (('Main'), (0.0, 0.0, 0.1, 1.0, 'Default', False))]
+        self.menus = [(('Game',), (0.1, -0.02, 0.8, -0.2, 'Default', False)),
+                      (('Editor',), (0.1, -0.24, 0.8, -0.2, 'Default', False)),
+                      (('Place',), (0.1, -0.46, 0.8, -0.2, 'Default', False)),
+                      (('Thing',), (0.1, -0.68, 0.8, -0.2, 'Default', False)),
+                      (('Main',), (0.0, 0.0, 0.1, 1.0, 'Default', False))]
         self.menuitems = []
         i = 0
         for item in game_menu_items.iteritems():
-            self.menuitems.append(('Game', i), (item[0], item[1], True))
+            self.menuitems.append((('Game', i), (item[0], item[1], True)))
             i += 1
         i = 0
         for item in editor_menu_items.iteritems():
-            self.menuitems.append(('Editor', i), (item[0], item[1], True))
+            self.menuitems.append((('Editor', i), (item[0], item[1], True)))
             i += 1
         i = 0
         for item in place_menu_items.iteritems():
-            self.menuitems.append(('Place', i), (item[0], item[1], True))
+            self.menuitems.append((('Place', i), (item[0], item[1], True)))
             i += 1
         i = 0
         for item in thing_menu_items.iteritems():
-            self.menuitems.append(('Thing', i), (item[0], item[1], True))
+            self.menuitems.append((('Thing', i), (item[0], item[1], True)))
             i += 1
         i = 0
         for item in main_menu_items.iteritems():
-            self.menuitems.append(('Main', i), (item[0], item[1], False))
+            self.menuitems.append((('Main', i), (item[0], item[1], False)))
             i += 1
 
         solarized_colors = { 'base03' : (0x00, 0x2b, 0x36),

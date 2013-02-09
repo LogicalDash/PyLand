@@ -43,8 +43,7 @@ class Rect:
 
     rect.addtobatch(batch, group=None) => None
     Call this function to draw the rect."""
-    def __init__(self, wf, x, y, width, height, color):
-        self.wf = wf
+    def __init__(self, x, y, width, height, color):
         self.x = x
         self.y = y
         self.width = width
@@ -63,14 +62,9 @@ class Rect:
     def addtobatch(self, batch, group=None):
         self.sprite = pyglet.sprite.Sprite(self.image, self.x, self.y,
                                            batch=batch, group=group)
-    def draw(self, group=None):
-        self.sprite = pyglet.sprite.Sprite(self.image, self.x - self.wf.board.x,
-                                           self.y - self.wf.board.y,
-                                           batch=self.wf.batch, group=group)
 
 class MenuItem:
-    def __init__(self, wf, text, onclick, style, closer=True):
-        self.wf = wf
+    def __init__(self, text, onclick, style, closer=True):
         self.text = text
         self.onclick = onclick
         self.closer = closer
@@ -102,16 +96,6 @@ class MenuItem:
         return self.text
     def __hash__(self):
         return hash(self.text)
-    def show(self):
-        if None in [self.y, self.fontsize]:
-            raise Exception("I can't show the label %s without knowing"
-                            " where it is, first." % self.text)
-        else:
-            self.wf.addclickable(self)
-            self.visible = True
-    def hide(self):
-        self.visible = False
-        self.wf.rmclickable(self)
     def set_pressed(self, b, m):
         if b == pyglet.window.mouse.LEFT:
             self.pressed = True
@@ -129,20 +113,19 @@ class MenuItem:
         return pyglet.text.Label(self.text, fontface, fontsize, color=color,
                                  x=x, y=y, batch=batch, group=group,
                                  anchor_x='left', anchor_y='bottom')
-    def draw(self, group=None):
+    def addtobatch(self, batch, group=None):
         if self.visible:
             if self.hovered:
                 color = self.style.fg_active
             else:
                 color = self.style.fg_inactive
             return pyglet.text.Label(self.text, self.style.fontface, self.style.fontsize,
-                                     color=color, x=self.x, y=self.y, batch=self.wf.batch,
+                                     color=color, x=self.x, y=self.y, batch=batch,
                                      group=group)
 
 class Menu:
-    def __init__(self, wf, name, xprop, yprop, wprop, hprop, style):
+    def __init__(self, name, xprop, yprop, wprop, hprop, style):
         self.name = name
-        self.wf = wf
         self.style = style
         if xprop < 0.0: # place lower-left corner (100*|xprop|)% from
                         # the right of the window
@@ -167,7 +150,7 @@ class Menu:
         self.fontsize = style.fontsize
         self.spacing = style.spacing
         self.items = []
-        self.rect = Rect(self.wf, self.x, self.y, self.width, self.height,
+        self.rect = Rect(self.x, self.y, self.width, self.height,
                          self.style.bgcolor)
         self._scrolled_to = 0
         self.visible = False
@@ -207,7 +190,7 @@ class Menu:
         self.items.remove_item(it)
     def addtobatch(self, batch, menugroup, labelgroup, start=0):
         if not self.visible:
-            return False
+            return []
         self.rect.addtobatch(batch, menugroup)
         items_height = 0
         draw_until = start
@@ -228,11 +211,7 @@ class Menu:
             drawing.show()
             drawn.append(drawing.draw(labelgroup))
             i += 1
-        return True
-
-    def draw(self):
-        return self.addtobatch(self.wf.batch, self.wf.menugroup,
-                               self.wf.labelgroup, self._scrolled_to)
+        return drawn
 
 
 class Spot:
@@ -242,8 +221,7 @@ class Spot:
     place; at the given x and y coordinates on the screen; in the
     given graph of Spots. The Spot will be magically connected to the other
     Spots in the same way that the underlying Places are connected."""
-    def __init__(self, wf, place, x, y, r, imgname, spotgraph):
-        self.wf = wf
+    def __init__(self, place, x, y, r, imgname, spotgraph):
         self.place = place
         self.x = x
         self.y = y
@@ -268,203 +246,41 @@ class Spot:
     def __iter__(self):
         return iter([self.img, self.getleft(), self.getbot()])
 
-class SpotGraph:
-    # igraph has a Layout class that is quite similar.
-    # It automatically lays out graphs for me. I should work out a way to incorporate it.
-    def __init__(self, wf, name, places=[], portals=[]):
-        self.name = name
-        self.wf = wf
-        self.w = wf.board.getwidth()
-        self.h = wf.board.getheight()
-        self.place2spot = {}
-        self.port2edge = {}
-        for place in places:
-            if self.wf.db.havespot(place):
-                self.place2spot[place] = self.wf.db.getspot(place.name)
-            else:
-                # just drop it somewhere.
-                # TODO change this out for something nicer
-                self.add_place_sensibly(place)
-                db.savespot(self.place2spot[place])
-        for port in portals:
-            if port.orig not in self.place2spot.keys():
-                if self.wf.db.havespot(port.orig):
-                    self.place2spot[port.orig] = self.wf.db.getspot(place.name)
-                    
-            self.port2edge[port] = (self.place2spot[port.orig], \
-                                    self.place2spot[port.dest])
-    def add_spot(self, spot):
-        self.place2spot[spot.place] = spot
-    def add_place(self, place, x, y, r=8):
-        newspot = Spot(place, x, y, r, self)
-        self.add_spot(newspot)
-        self.connect_portals(newspot)
-    def add_place_sensibly(self, place):
-        # TODO actually select a sensible spot
-        x = rand(0, self.w)
-        y = rand(0, self.h)
-        self.add_place(place, x, y, 8)
-    def spots_connected(self, spot1, spot2):
-        return ((spot1, spot2) in self.edges) or ((spot2, spot1) in self.edges)
-    def neighbors(self, spot1):
-        r = []
-        for edge in self.edges:
-            if edge[0] is spot1:
-                r.append(edge[1])
-            if edge[1] is spot1:
-                r.append(edge[0])
-        return r
-    def add_portal(self, port):
-        if not self.place2spot.has_key(port.orig):
-            self.add_place_sensibly(port.orig)
-        if not self.place2spot.has_key(port.dest):
-            self.add_place_sensibly(port.dest)
-        spot1 = self.place2spot[port.orig]
-        spot2 = self.place2spot[port.dest]
-        edge = (spot1, spot2)
-        self.port2edge[port] = edge
-        self.edges_to_draw.append(((spot1.x, spot1.y, spot2.x, spot2.y), (255, 255)*4))
-            
-    def connect_portals(self, spot):
-        for portal in spot.place.portals:
-            ps = self.places.keys()
-            if portal.orig in ps and portal.dest in ps:
-                self.add_edge(self.places[portal.orig], self.places[portal.dest])
-
-
 
 class Pawn:
-    """Data structure to represent things that move about between
-    Spots on the screen.  Mostly these will represent characters or vehicles.
+    """A token to represent something that moves about between Places.
 
-    The constructor takes three arguments: start, graph, and speed.
+    Pawn(wf, thing, place, x, y) => pawn
 
-    start is a Spot. The Pawn will appear there at first.
+    wf is the WidgetFactory that made the Pawn. It will be displayed on the Board that wf manages.
 
-    graph is a list of Spots. It should contain
-    every Place that the Pawn ought to know about. That doesn't
-    necessarily mean every Place in the game world, or even every
-    Place that the character *represented by* the Pawn should know
-    about. Pawns are not concerned with pathfinding, only with moving
-    along a prescribed route at a prescribed speed.
+    thing is the game-logic item that the Pawn represents. It should be of class Thing.
 
-    To give such a route to a Pawn, call waypoint. It takes two
-    arguments: place and speed. place is the Place to go to next. The
-    Pawn actually has no idea whether or not Places are connected to
-    one another, so check first to make sure they are, otherwise the
-    Pawn will happily wander where there is no Passage. speed is a
-    floating point representing the portion of the distance between
-    this Place and the previous one on the route that the Pawn should
-    cover in a single frame. This should be calculated as the seconds
-    of real time that the travel should take, divided by the game's
-    screen-updates-per-second."""
+    place is the name of a Place that is already represented by a Spot
+    in the same Board. pawn will appear here to begin with. Note that
+    the Spot need not be visible. You can supply the Place name for an
+    invisible spot to make it appear that a Pawn is floating in that
+    nebulous dimension between Places.
+
+    """
     # Coordinates should really be relative to the Board and not the
     # uh, canvas? is that what they are called in pyglet?
-    def __init__(self, wf, thing, img, board, x, y, place):
-        self.wf = wf
+    def __init__(self, thing, img, place):
         self.thing = thing
         self.img = img
-        self.board = board
-        if x is not None and y is not None:
-            self.x = x
-            self.y = y
-        else:
-            self.x = start.x
-            self.y = start.y
-        if type(place) is str:
-            self.curspot = self.wf.db.getspot(place)
-        elif isinstance(place, Place):
-            self.curspot = self.wf.db.getspot(place.name)
-        elif isinstance(place, Spot):
-            self.curspot = place
-        self.tup = (img, self.x, self.y)
-        self.route = []
-        self.step = 0
-        self.trip_completion = 0.0
+        self.place = place
+        self.x = place.x
+        self.y = place.y
+        self.curspot = self.wf.db.getspot(place.name)
         self.visible = False
-    def show(self):
-        self.visible = True
-        self.wf.clickables.append(self)
-        self.wf.draggables.append(self)
-    def hide(self):
-        self.visible = False
-        self.wf.clickables.remove(self)
-        self.wf.draggables.remove(self)
-    def toggle(self):
-        if self.visible:
-            self.hide()
-        else:
-            self.show()
-    def curstep(self):
-        if self.step >= len(self.route):
-            return None
-        elif len(self.route) > 0:
-            return self.route[self.step]
-    def curspeed(self):
-        return self.curstep()[1]
-    def nextspot(self):
-        return self.curstep()[0]
-    def prevspot(self):
-        if self.step == 0:
-            return self.curspot
-        self.step -= 1
-        r = self.curstep()[0]
-        self.step += 1
-        return r
-    def setx(self, newx):
-        self.x = newx
-    def sety(self, newy):
-        self.y = newy
-    def move(self, rep = 1):
-        if self.route is None:
-            return
-        orig = self.prevspot()
-        dest = self.nextspot()
-        speed = self.curspeed() * rep
-        x_total = float(dest.x - orig.x)
-        y_total = float(dest.y - orig.y)
-        self.trip_completion += speed
-        if self.trip_completion >= 1.0:
-            # Once I have my own event-handling infrastructure set up,
-            # this should fire a "trip completed" event.
-            self.trip_completion = 0.0
-            self.curspot = dest
-            self.x = dest.x
-            self.y = dest.y
-            if self.step >= len(self.route) - 1:
-                self.step = 0
-                self.route = None
-            self.step += 1
-            return
-        x_traveled = x_total * self.trip_completion
-        y_traveled = y_total * self.trip_completion
-        self.setx(orig.x + x_traveled)
-        self.sety(orig.y + y_traveled)
-    def waypoint(self, dest, speed):
-        if len(self.route) == 0:
-            self.route = [(dest, speed)]
-        else:
-            self.route.append((dest, speed))
-    def cancel_route(self):
-        """Canceling the route will let the Pawn reach the next node
-        before stopping to await a new waypoint. If you want it
-        stranded between two nodes, call delroute instead."""
-        self.route = [self.curstep()]
-    def delroute(self):
-        self.route = []
-
-class PawnTimer:
-    def __init__(self, pawns):
-        self.pawns = pawns
-        self.delay = 0.0
-
+    def addtobatch(self, batch, group=None):
+        return pyglet.sprite.Sprite(pawn.img, pawn.x, pawn.y, batch=self.batch, group=self.pawngroup)
+            
 class Board:
-    def __init__(self, wf, width, height, texture):
-        self.wf = wf
+    def __init__(self, width, height, texture):
         self.width = width
         self.height = height
         self.tex = texture
-        self.spotgraphs = []
         self.pawns = []
     def getwidth(self):
         return self.width
@@ -487,7 +303,6 @@ class WidgetFactory:
     # One window, batch, and WidgetFactory per board.
     def __init__(self, db, gamestate, boardname, window, batch):
         self.db = db
-        db.wf = self
         self.board = self.db.getboard(boardname)
         self.gamestate = gamestate
         self.window = window
@@ -508,6 +323,11 @@ class WidgetFactory:
         self.pressed = None
         self.hovered = None
         self.grabbed = None
+    def rmlistener(self, listener):
+        self.hoverables.remove(listener)
+        self.clickables.remove(listener)
+        self.draggables.remove(listener)
+        self.keyboard_listeners.remove(listener)
     def movepawns(self, ts, freq):
         self.delay += ts - freq
         # when the cumulative delay is longer than the time between frames,
@@ -519,8 +339,10 @@ class WidgetFactory:
         for pawn in self.pawns:
             pawn.move(reps)
     def on_draw(self):
-        for widget in self.made:
-            widget.addtobatch(self.batch)
+        drawn = []
+        for pawn in self.pawnsmade:
+            drawn.append(pawn.addtobatch(self.batch, self.pawngroup))
+        
     def on_key_press(self, sym, mods):
         for listener in self.keyboard_listeners:
             if sym in listener.listen_to_keys:
@@ -570,8 +392,13 @@ class WidgetFactory:
             return it.name
         else:
             raise TypeError("I need a %s or the name of one" % str(clas))
-    def open_spot(self, placen):
-        s = self.db.getspot(placen)
+    def open_spot(self, place_or_name):
+        if type(place_or_name) is str:
+            s = self.db.getspot(place)
+        elif isinstance(place_or_name, Place):
+            s = self.db.getspot(place.name)
+        else:
+            raise TypeError("I need a place or the name of one.")
         self.spotsmade.append(s)
         return s
     def close_spot(self, name_or_spot):
@@ -588,6 +415,7 @@ class WidgetFactory:
             raise TypeError("I need a name of a place, a place, or the spot that represents it")
         self.db.savespot(spot)
         del self.db.spotmap[name]
+        self.rmlistener(spot)
         self.spotsmade.remove(spot)
     def open_menu(self, name):
         menu = self.db.getmenu(name)
@@ -605,6 +433,7 @@ class WidgetFactory:
         # saving the opened-ness of windows when 
         self.db.savemenu(menu)
         del self.db.menumap[name]
+        self.rmlistener(menu)
         self.menusmade.remove(menu)
     def open_pawn(self, thing_or_name):
         if type(thing) is str:
@@ -616,5 +445,48 @@ class WidgetFactory:
         pawn = self.db.getpawn(thingn, self.board)
         self.pawnsmade.append(pawn)
         return pawn
-    def close_pawn(self, thing_or_name):
-        
+    def close_pawn(self, thing_or_pawn_or_name):
+        topor = thing_or_pawn_or_name
+        if type(topor) is str:
+            pawn = self.db.getpawn(topor, self.board)
+            name = topor
+        elif isinstance(topor, Thing):
+            pawn = self.db.getpawn(topor.name, self.board)
+            name = topor.name
+        elif isinstance(topor, Pawn):
+            pawn = topor
+            name = topor.name
+        else:
+            raise TypeError("I need a thing, a pawn, or a name")
+        self.db.savepawn(pawn)
+        del self.db.pawnmap[name]
+        self.rmlistener(pawn)
+        self.pawnsmade.remove(pawn)
+    def show_pawn(self, pawn):
+        pawn.visible = True
+        self.clickables.append(pawn)
+        self.draggables.append(pawn)
+    def hide_pawn(self, pawn):
+        pawn.visible = False
+        self.clickables.remove(pawn)
+        self.draggables.remove(pawn)
+    def toggle_pawn(self, pawn):
+        if pawn.visible:
+            self.hide_pawn(pawn)
+        else:
+            self.show_pawn(pawn)
+    def show_menu_item(self, mi):
+        if None in [mi.y, mi.fontsize]:
+            raise Exception("I can't show the label %s without knowing"
+                            " where it is, first." % mi.text)
+        else:
+            self.clickables.append(mi)
+            mi.visible = True
+    def hide_menu_item(self, mi):
+        mi.visible = False
+        self.clickables.remove(mi)
+    def toggle_menu_item(self, mi):
+        if mi.visible:
+            self.hide_menu_item(mi)
+        else:
+            self.show_menu_item(mi)

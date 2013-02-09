@@ -1,4 +1,5 @@
 import copy
+import igraph
 
 class Portal:
     # Portals would be called 'exits' if that didn't make it
@@ -18,33 +19,34 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
-    def __init__(self, name, origin, destination, avatar=None, weight=0):
+    def __init__(self, name, origin, destination, attributes={}, avatar=None, weight=0):
         self.name = name
         self.weight = weight
         self.avatar = avatar
         self.dest = destination
         self.orig = origin
+        self.att = attributes
     def __repr__(self):
         return "(" + str(self.orig) + "->" + str(self.dest) + ")"
     def __eq__(self, other):
         return self.name == other.name
-    def getWeight(self):
+    def get_weight(self):
         return weight
-    def getAvatar(self):
+    def get_avatar(self):
         return avatar
-    def isPassableNow(self):
+    def is_passable_now(self):
         return True
     def admits(self, traveler):
         return True
-    def isPassableBy(self, traveler):
+    def is_passable_by(self, traveler):
         return self.isPassableNow() and self.admits(traveler)
-    def getDest(self):
+    def get_dest(self):
         return self.dest
-    def getOrig(self):
+    def get_orig(self):
         return self.orig
-    def getEnds(self):
+    def get_ends(self):
         return [self.orig, self.dest]
     def touches(self, place):
         return self.orig is place or self.dest is place
-    def findNeighboringPortals(self):
+    def find_neighboring_portals(self):
         return self.orig.portals + self.dest.portals
