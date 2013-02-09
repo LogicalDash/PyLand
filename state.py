@@ -4,6 +4,6 @@ class GameState:
     """
     def __init__(self, db):
         self.db = db
-    def update(self):
+    def update(self, ts, st):
         pass
         

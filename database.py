@@ -5,7 +5,7 @@ from route import Route
 from widgets import *
 from thing import Thing
 from attrcheck import *
-from dimension import Dimension
+from graph import Dimension, Map
 
 defaultCommit=True
 testDB=False
@@ -36,6 +36,32 @@ def valuesins(tab, x, y):
 def valuesknow(tab, keyexp, x, y):
     return "select count(*) from " + tab + " where " + keyexp + " in (" + valuesrows(x, y) + ");"
 
+def valuesget(tab, keynames, valnames, y):
+    sl = ["select", " "]
+    for keyname in keynames:
+        sl.append(keyname)
+        sl.append(", ")
+    for valname in valnames:
+        sl.append(valname)
+        sl.append(", ")
+    sl[-1] = " "
+    sl += ["from", " ", tab, " ", "where", " ", "("]
+    for keyname in keynames:
+        sl.append(keyname)
+        sl.append(", ")
+    sl[-1] = ")"
+    sl += [" ", "in", " "]
+    val = ["("]
+    for i in xrange(0,len(keynames)):
+        val += ["?", ", "]
+    val[-1] = ")"
+    vallst = ["("]
+    for i in xrange(0,y):
+        vallst += val
+        vallst.append(", ")
+    vallst[-1] = ")"
+    return "".join(sl + vallst) + ";"
+    
 class Database:
     """Method naming conventions:
 
@@ -108,39 +134,39 @@ class Database:
         self.new = []
         self.altered = []
         
-        self.placemap = {}
-        self.portalmap = {}
-        self.portalorigdestmap = {}
-        self.thingmap = {}
-        self.spotmap = {}
-        self.imgmap = {}
-        self.dimmap = {}
-        self.boardmap = {}
-        self.menumap = {}
-        self.menuitemmap = {}
-        self.attrvalmap = {}
-        self.attrcheckmap = {}
-        self.pawnmap = {}
-        self.stylemap = {}
-        self.colormap = {}
+        self.placedict = {}
+        self.portaldict = {}
+        self.portalorigdestdict = {}
+        self.thingdict = {}
+        self.spotdict = {}
+        self.imgdict = {}
+        self.dimdict = {}
+        self.boarddict = {}
+        self.menudict = {}
+        self.menuitemdict = {}
+        self.attrvaldict = {}
+        self.attrcheckdict = {}
+        self.pawndict = {}
+        self.styledict = {}
+        self.colordict = {}
 
         self.contained_in = {} # This maps strings to other strings, not to Python objects.
         self.contents = {} # ditto
 
 
-        self.mapmap = { Place : self.placemap,
-                        Portal : self.portalmap,
-                        Thing : self.thingmap,
-                        Spot : self.spotmap,
-                        pyglet.resource.image : self.imgmap,
-                        Dimension : self.dimmap,
-                        Board : self.boardmap,
-                        Menu : self.menumap,
-                        MenuItem : self.menuitemmap,
-                        AttrCheck : self.attrcheckmap,
-                        Pawn : self.pawnmap,
-                        Style : self.stylemap,
-                        Color : self.colormap }
+        self.classdict = { Place : self.placedict,
+                        Portal : self.portaldict,
+                        Thing : self.thingdict,
+                        Spot : self.spotdict,
+                        pyglet.resource.image : self.imgdict,
+                        Dimension : self.dimdict,
+                        Board : self.boarddict,
+                        Menu : self.menudict,
+                        MenuItem : self.menuitemdict,
+                        AttrCheck : self.attrcheckdict,
+                        Pawn : self.pawndict,
+                        Style : self.styledict,
+                        Color : self.colordict }
         # This maps strings to functions,
         # giving a user with access to the database the ability to
         # call that function. Not sure how yet.
@@ -170,23 +196,25 @@ class Database:
         # items may or may not correspond to anything in the gameworld.
         # they may be places. they may be things. they may be people.
         self.writecursor.execute("create table item (name text primary key);")
-        self.writecursor.execute("create table place (name text primary key, foreign key(name) references item(name));")
-        self.writecursor.execute("create table thing (name text primary key, foreign key(name) references item(name));")
-        self.writecursor.execute("create table portal (name text primary key, from_place, to_place, foreign key(name) references item(name), foreign key(from_place) references place(name), foreign key(to_place) references place(name), check(from_place<>to_place));")
-        self.writecursor.execute("create table dimension (name text primary key, foreign key(name) references item(name));")
-        self.writecursor.execute("create table containment (contained, container, foreign key(contained) references item(name), foreign key(container) references item(name), check(contained<>container), primary key(contained));")
+        self.writecursor.execute("create table dimension (name text primary key);")
+        self.writecursor.execute("create table place (name text primary key, dimension text, foreign key(name) references item(name), foreign key(dimension) references dimension(name));")
+        self.writecursor.execute("create table thing (name text primary key, dimension text, foreign key(name) references item(name));")
+        self.writecursor.execute("create table portal (name text primary key, dimension text, map text, from_place text, to_place text, foreign key(name) references item(name), foreign key(dimension) references dimension(name), foreign key(map) references map(name), foreign key(from_place) references place(name), foreign key(to_place) references place(name), check(from_place<>to_place));")
+        self.writecursor.execute("create table map (name text primary key, dimension text, foreign key(dimension) references dimension(name));")
+        self.writecursor.execute("create table mappedness (item text, map text, foreign key(item) references item(name), foreign key(map) references map(name));")
+        self.writecursor.execute("create table containment (dimension text, contained text, container text, foreign key(dimension) references dimension(name), foreign key(contained) references item(name), foreign key(container) references item(name), check(contained<>container), primary key(dimension, contained));")
         self.writecursor.execute("create table attribute (name text primary key, type text, lower, upper);")
         self.writecursor.execute("create table attribution (attribute, attributed_to, value, foreign key(attribute) references permitted_values(attribute), foreign key(attributed_to) references item(name), foreign key(value) references permitted_values(value), primary key(attribute, attributed_to));")
         self.writecursor.execute("create table permitted (attribute, value, foreign key(attribute) references attribute(name), primary key(attribute, value));")
         self.writecursor.execute("create table img (name text primary key, path, rltile);")
-        self.writecursor.execute("create table board (name text primary key, width integer, height integer, wallpaper, foreign key(wallpaper) references image(name));")
+        self.writecursor.execute("create table board (map text primary key, width integer, height integer, wallpaper, foreign key(map) references map(name), foreign key(wallpaper) references image(name));")
         self.writecursor.execute("create table spot (place text, board text, x integer, y integer, r integer, foreign key(place) references place(name), foreign key(board) references board(name), primary key(place, board));")
         self.writecursor.execute("create table pawn (thing text, board text, img text, spot text, foreign key(img) references img(name), foreign key(thing) references thing(name), foreign key(spot) references spot(place), primary key(thing, board));")
         self.writecursor.execute("create table color (name text primary key, red integer not null check(red between 0 and 255), green integer not null check(green between 0 and 255), blue integer not null check(blue between 0 and 255));")
         self.writecursor.execute("create table style (name text primary key, fontface text not null, fontsize integer not null, spacing integer, bg_inactive, bg_active, fg_inactive, fg_active, foreign key(bg_inactive) references color(name), foreign key(bg_active) references color(name), foreign key(fg_inactive) references color(name), foreign key(fg_active) references color(name));")
         self.writecursor.execute("create table menu (name text primary key, x float not null, y float not null, width float not null, height float not null, style text default 'Default', visible boolean default 0, foreign key(style) references style(name));")
         self.writecursor.execute("create table menuitem (menu text, idx integer, text text, onclick text, closer boolean, foreign key(menu) references menu(name), primary key(menu, idx));")
-        self.writecursor.execute("create table step (thing text, ord integer, destination text, progress float, portal text, foreign key(thing) references thing(name), foreign key(portal) references portal(name), foreign key(destination) references place(name), check(progress>=0.0), check(progress<1.0), primary key(thing, ord, destination));")
+        self.writecursor.execute("create table step (map text, thing text, ord integer, destination text, progress float, portal text, foreign key(map) references map(name), foreign key(thing) references thing(name), foreign key(portal) references portal(name), foreign key(destination) references place(name), check(progress>=0.0), check(progress<1.0), primary key(map, thing, ord, destination));")
 
         # I think maybe I will want to actually store pawns in the database eventually.
         # Later...
@@ -207,6 +235,8 @@ class Database:
         self.mkmanystyle(f(default.styles), commit=False)
         self.mkmanymenu(f(default.menus), commit=False)
         self.mkmanymenuitem(f(default.menuitems), commit=False)
+        self.mkdimension('Physical', commit=False)
+        self.mkmap('Default', 'Physical', commit=False)
         self.mkmanyplace(f(default.places), commit=False)
         self.mkmanyportal(f(default.portals), commit=False)
         self.mkmanything(f(default.things), commit=False)
@@ -250,6 +280,33 @@ class Database:
         else:
             return False
 
+    def loadmany(self, tname, keyexp, valexp, keytups, clas):
+        # TODO test the fuck out of this
+        querystr = valuesget(tname, keyexp, valexp, len(keytups))
+        keylst = untuple(keytups)
+        self.readcursor.execute(querystr, keylst)
+
+        r = []
+        keylen = len(keyexp)
+        vallen = len(valexp)
+        for row in self.readcursor:
+            # Create object of the class in question
+            obj = clas(*row)
+            # Get the map to store it in
+            key = row[:keylen]
+            m = self.classdict[clas]
+            # Create the map if it doesn't exist yet
+            while len(key)>1:
+                if not m.has_key(key[0]):
+                    m[key[0]] = {}
+                m = m[key[0]]
+                key = key[1:]
+            # At last, assign the key to the object
+            m[key[0]] = obj
+            # and put it in the list to be returned
+            r.append(obj)
+        return r
+
     def remember(self, obj):
         """ Store changes for immediate accessibility and eventual write to disk.
         
@@ -260,9 +317,9 @@ class Database:
         comes.
 
         """
-        if obj.__class__ not in self.mapmap.keys():
+        if obj.__class__ not in self.classdict.keys():
             raise TypeError("I have no idea how to remember this!")
-        m = self.mapmap[obj.__class__]
+        m = self.classdict[obj.__class__]
         if m.has_value(obj):
             self.altered.append(obj)
         elif m.has_key(obj.name): # SHOULDN'T happen--but just in case...
@@ -271,18 +328,76 @@ class Database:
             self.new.append(obj)
             m[obj.name] = obj
 
-    def mk(self, tname, valtup, commit=defaultCommit):
-        return self.mkmany(tname, [valtup], commit)
-
-    def know(self, tname, keyexp, keytup):
-        return self.knowany(tname, keyexp, [keytup])
-
     def knowdimension(name):
         self.readcursor.execute("select count(*) from dimension where name=?;")
         return self.readcursor.fetchone()[0] == 1
 
     def havedimension(dim):
         return self.knowdimension(dim.name)
+
+    def mkdimension(name, commit=defaultCommit):
+        self.writecursor.execute("insert into item values (?);", (name,))
+        self.writecursor.execute("insert into dimension values (?);", (name,))
+        if commit:
+            self.conn.commit()
+
+    def mkmanydimension(tups, commit=defaultCommit):
+        self.mkmany("item", tups, commit=False)
+        self.mkmany("dimension", tups, commit=False)
+        if commit:
+            self.conn.commit()
+
+    def loaddimension(name):
+        # fetch all the places and portals in the dimension, then make the dimension
+        self.readcursor.execute("select contained from containment where container=? join place on name=contained;", (name,))
+        places = self.getmanyplace(self.readcursor)
+        self.readcursor.execute("select contained from containment where container=? join portal on name=contained;", (name,))
+        portals = self.getmanyportal(self.readcursor)
+        dimension = Dimension(name, places, portals)
+        self.dimdict[name] = dimension
+        return dimension
+
+    def loadmanydimension(self, names):
+        # This'll be easier if I create the Dimension objects first, and then assign them places and portals.
+        dimd = dict([ (n, Dimension[n]) for n in names ])
+        # get all the places in a dimension with name in names; with the name next to the place
+        querystr = "select container, contained from containment where container in ("
+        questionmarks = ["?"] * len(names)
+        querystr += ", ".join(questionmarks) + ")"
+        querystr += " join place on name=contained;"
+        self.readcursor.execute(querystr, names)
+        # get the Place of the name given in the second column, and
+        # assign it to the dimension of the name given in the first
+        # column
+        for row in self.readcursor:
+            dimd[row[0]].places.append(self.getplace(row[1]))
+        # As above, for portals.
+        querystr = "select container, contained from containment where container in ("
+        querystr += ", ".join(questionmarks) + ")"
+        querystr += " join portal on name=contained;"
+        self.readcursor.execute(querystr, names)
+        for row in self.readcursor:
+            dimd[row[0]].portals.append(self.getportal(row[1]))
+        self.dimdict.update(dimd)
+        return dimd.itervalues()
+
+    def getdimension(name):
+        if self.dimdict.has_key(name):
+            return self.dimdict[name]
+        else:
+            return self.loaddimension(name)
+
+    def getmanydimension(names):
+        unloaded = list(names)
+        r = []
+        for name in unloaded:
+            if self.dimdict.has_key(name):
+                dim = self.dimdict[name]
+                r.append(dim)
+                name = ''
+        unloaded.remove('')
+        r += self.loadmanydimension(unloaded)
+        return r
 
     def knowplace(self, name):
         self.readcursor.execute("select count(*) from place where name=?;",
@@ -332,27 +447,101 @@ class Database:
     def loadplace(self, name):
         if not self.knowplace(name):
             return None
-        portals = self.getportal(name) # should return an iterable
-        contents = self.getcontents(name)
-        p = Place(name) # I think I might have to handle nulls special
-        self.placemap[name] = p
-        for port in portals:
-            p.portals.append(self.getportal(port[0]))
-        for item in contents:
-            th = self.getthing(item[0])
-            p.addthing(th)
+        self.readcursor.execute("select name from portal where from_place=?;", (name,))
+        portals = self.getmanyportal( [row[0] for row in self.readcursor] )
+        self.readcursor.execute("select contained from containment where container=?;", (name,))
+        contents = self.getmanything( [row[0] for row in self.readcursor] )
+        self.readcursor.execute("select attribute, value from attribute where attributed_to=?;", (name,))
+        attributes = self.getmanyattribution( [row[0] for row in self.readcursor] )
+        p = Place(name, attributes, contents, portals) # I think I might have to handle nulls special
+        self.placedict[name] = p
         return p
+
+    def loadmanyplace(self, names):
+        # portals
+
+        questionmarks = ["?"] * len(names)
+        qmstr = ", ".join(questionmarks)
+        querystr = "select from_place, name from portal where from_place in (" + qmstr + ");"
+        self.readcursor.execute(querystr, names)
+        place2port = {}
+        for row in self.readcursor:
+            if place2port.has_key(row[0]):
+                place2port[row[0]].append(row[1])
+            else:
+                place2port[row[0]] = [row[1]]
+        # things. not bothering to check for thingness, containment is supposed to do that
+        querystr = "select container, contained from containment where container in (" + qmstr + ");"
+        self.readcursor.execute(querystr, names)
+        place2thing = {}
+        for row in self.readcursor:
+            if place2thing.has_key(row[0]):
+                place2thing[row[0]].append(row[1])
+            else:
+                place2thing[row[0]] = [row[1]]
+        # attributes
+        querystr = "select attributed_to, attribute, value from attribution where attributed_to in (" + qmstr + ");"
+        self.readcursor.execute(querystr, names)
+        place2attr = {}
+        for row in self.readcursor:
+            if not place2attr.has_key(row[0]):
+                place2attr[row[0]] = {}
+            if not place2attr[row[0]].has_key(row[1]):
+                place2attr[row[0]][row[1]] = []
+            place2attr[row[0]][row[1]].append(row[2])
+        # Currently all these dicts just map strings to other strings indirectly.
+        # I need to get the objects the strings refer to, and for performance sake I want to do so in bulk.
+        # This is easy to do if I can get the values in a list and keep them in order...
+        # So? Get them in order, man!
+        place2portkeys = place2port.iterkeys()
+        place2portvals = place2port.itervalues()
+        ports = iter(self.getmanyportal(place2portvals))
+        while True:
+            try:
+                key = place2portkeys.next()
+                val = ports.next()
+                place2port[key] = val
+            except:
+                break
+        place2thingkeys = place2thing.iterkeys()
+        place2thingvals = place2thing.itervalues()
+        things = iter(self.getmanythings(place2thingvals))
+        while True:
+            try:
+                key = place2thingkeys.next()
+                val = things.next()
+                place2thing[key] = val
+            except:
+                break
+        r = []
+        for name in names:
+            p = Place(name, place2attr[name], place2thing[name], place2port[name])
+            self.placedict[name] = p
+            r.append(p)
+        return r
+        
 
     def getplace(self, name):
         # Remember that this returns the *loaded* version, if there is one.
-        if self.placemap.has_key(name):
-            return self.placemap[name]
+        if self.placedict.has_key(name):
+            return self.placedict[name]
         else:
             return self.loadplace(name)
 
+    def getmanyplace(self, names):
+        unloaded = list(names)
+        r = []
+        for name in unloaded:
+            if self.placedict.has_key(name):
+                r.append(self.placedict[name])
+                name = ''
+        unloaded.remove('')
+        r += self.loadmanyplace(unloaded)
+        return r
+
     def delplace(self, name):
-        if self.placemap.has_key(name):
-            del self.placemap[name]
+        if self.placedict.has_key(name):
+            del self.placedict[name]
         self.writecursor.execute("delete from place where name=?;", (name,))
         self.writecursor.execute("delete from item where name=?;", (name,))
 
@@ -361,17 +550,11 @@ class Database:
                                 (name,))
         return self.readcursor.fetchone()[0] == 1
         
-    def knowsomething(self, namesingletons):
+    def knowanything(self, namesingletons):
         return self.knowany("thing", "(name)", namesingletons)
-
-    def knowsomethings(self, namesingletons):
-        return self.knowsomething(namesingletons)
 
     def knowallthing(self, namesingletons):
         return self.knowall("thing", "(name)", namesingletons)
-
-    def knowallthings(self, namesingletons):
-        return self.knowallthing(namesingletons)
 
     def havething(self, thing):
         return self.knowthing(thing.name)
@@ -412,18 +595,23 @@ class Database:
         loc = self.getitem(loc_s)
         atts = self.getattributiondict(attribute=None, attributed_to=name)
         th = Thing(name, loc, atts)
-        self.thingmap[name] = th
+        self.thingdict[name] = th
         return th
 
+    def loadmanything(self, names):
+        # Presently, each item may be contained in up to one other item.
+        # This works fine for the physical world model, but I may need more containment hierarchies for the other dimensions.
+        # I guess I'll have to update containment and the functions that pull from it so they take the dimension into account.
+
     def getthing(self, name):
-        if self.thingmap.has_key(name):
-            return self.thingmap[name]
+        if self.thingdict.has_key(name):
+            return self.thingdict[name]
         else:
             return self.loadthing(name)
 
     def delthing(self, thing, commit=defaultCommit):
-        if self.thingmap.has_key(thing):
-            del self.thingmap[thing]
+        if self.thingdict.has_key(thing):
+            del self.thingdict[thing]
         self.writecursor.execute("delete from containment where contained=? or container=?;", (thing, thing))
         self.writecursor.execute("delete from thing where name=?;", (thing,))
         self.writecursor.execute("delete from item where name=?;", (thing,))
@@ -441,12 +629,12 @@ class Database:
             return None
 
     def getitem(self, name):
-        if self.thingmap.has_key(name):
-            return self.thingmap[name]
-        elif self.placemap.has_key(name):
-            return self.placemap[name]
-        elif self.portalmap.has_key(name):
-            return self.portalmap[name]
+        if self.thingdict.has_key(name):
+            return self.thingdict[name]
+        elif self.placedict.has_key(name):
+            return self.placedict[name]
+        elif self.portaldict.has_key(name):
+            return self.portaldict[name]
         else:
             return self.loaditem(name)
             
@@ -465,66 +653,98 @@ class Database:
         contained = item.loc
         return self.knowcontainment(item)
 
-    def mkcontainment(self, contained, container, commit=defaultCommit):
-        self.writecursor.execute("insert into containment values (?, ?);",
-                  (contained, container))
+    def mkcontainment(self, contained, container, dimension='Physical', commit=defaultCommit):
+        self.writecursor.execute("insert into containment values (?, ?, ?);",
+                  (dimension, contained, container))
         if commit:
             self.conn.commit()
 
-    def mkmanycontainment(self, conttups, commit=defaultCommit):
-        querystr = valuesins("containment", 2, len(conttups))
+    def mkmanycontainment(self, conttups, dimension='Physical', commit=defaultCommit):
+        querystr = valuesins("containment", 3, len(conttups))
         flattups = []
         for tup in conttups:
-            if type(tup) is tuple:
-                flattups.append(tup[0])
-                flattups.append(tup[1])
-            else:
-                flattups.append(tup)
+            flattups.append(tup[0])
+            flattups.append(tup[1])
+            flattups.append(dimension)
         self.writecursor.execute(querystr, flattups)
         if commit:
             self.conn.commit()
 
-    def updcontainment(self, contained, container, commit=defaultCommit):
-        self.writecursor.execute("update containment set container=? where contained=?;",
-                  (container, contained))
+    def updcontainment(self, contained, container, dimension='Physical', commit=defaultCommit):
+        self.writecursor.execute("update containment set container=? where contained=? and dimension=?;",
+                  (container, contained, dimension))
         if commit:
             self.conn.commit()
 
-    def modcontainment(self, contained, container):
-        oldcontainer = self.contained_in[contained]
+    def modcontainment(self, contained, container, dimension='Physical'):
+        oldcontainer = self.contained_in[dimension][contained]
         if oldcontainer == container:
             return
-        self.contained_in[contained] = container
-        self.contents[oldcontainer].remove(contained)
-        self.contents[container].append(contained)
+        self.contained_in[dimension][contained] = container
+        self.contents[dimension][oldcontainer].remove(contained)
+        self.contents[dimension][container].append(contained)
 
-    def writecontainment(self, contained, container, commit=defaultCommit):
-        if self.knowcontainment(contained):
-            self.updcontainment(contained, container, commit)
+    def writecontainment(self, contained, container, dimension='Physical', commit=defaultCommit):
+        if self.knowcontainment(contained, dimension):
+            self.updcontainment(contained, container, dimension, commit)
         else:
-            self.mkcontainment(contained, container, commit)
+            self.mkcontainment(contained, container, dimension, commit)
 
     def savecontainment(self, contained, commit=defaultCommit):
-        self.writecontainment(contained, contained.loc)
+        for loc in contained.loc.iteritems():
+            self.writecontainment(contained, loc[1], loc[0])
 
-    def loadcontainment(self, contained):
-        self.readcursor.execute("select container from containment where contained=?;", (contained,))
-        try:
-            item = self.readcursor.fetchone()[0]
-        except IndexError:
-            return None
-        self.contained_in[contained] = item
-        if self.contents.has_key(item):
-            self.contents[item].append(contained)
+    def loadcontainment(self, containedn, dimensions=None):
+        # default is to load containment in all the dimensions
+        containers = []
+        if dimension is None:
+            self.readcursor.execute("select dimension, container from containment where contained=?;", (containedn,))
+            for row in self.readcursor:
+                containers.append(row)
+                (dimension, containern) = row
+                if not self.contained_in.has_key(dimension):
+                    self.contained_in[dimension] = {}
+                if not self.contents.has_key(dimension):
+                    self.contents[dimension] = {}
+                self.contained_in[dimension][containedn] = containern
+                if self.contents[dimension].has_key(containern):
+                    self.contents[dimension][containern].append(containedn)
+                else:
+                    self.contents[dimension][containern] = [containedn]
         else:
-            self.contents[item] = [item]
-        return item
+            for dimension in dimensions:
+                self.readcursor.execute("select container from containment where dimension=? and contained=?;", (dimension, containedn))
+                if not self.contained_in.has_key(dimension):
+                    self.contained_in[dimension] = {}
+                if not self.contents.has_key(dimension):
+                    self.contents[dimension] = {}
+                for row in self.readcursor:
+                    containern = row[0]
+                    containers.append((dimension, containern))
+                    if self.contents[dimension].has_key(containern):
+                        self.contents[dimension][containern].append(containedn)
+                    else:
+                        self.contents[dimension][containern] = [containedn]
+                    self.contained_in[dimension][containedn] = containern
+        return containers
 
-    def getcontainment(self, contained):
-        if self.contained_in.has_key(contained):
-            return self.contained_in[contained]
+    def getcontainment(self, contained, dimensions=None):
+        containers = []
+        if dimensions is None:
+            self.readcursor.execute("select name from dimension;")
+            known_dimensions = [ row[0] for row in self.readcursor ]
+            for dim in known_dimensions:
+                if self.contained_in.has_key(dim) and self.contained_in[dim].has_key(contained):
+                    containers.append(self.contained_in[dim][contained])
+                else:
+                    containers += self.loadcontainment(contained, dim)
         else:
-            return self.loadcontainment(contained)
+            for dimension in dimensions:
+                if self.contained_in.has_key(dimension) and self.contained_in[dimension].has_key(contained):
+                    containers.append((dimension, self.contained_in[dimension][contained]))
+                else:
+                    containers += self.loadcontainment(contained, dimension)
+        
 
     def cullcontainment(self, container, keeps=[], commit=defaultCommit):
         if len(keeps) == 0:
@@ -667,18 +887,18 @@ class Database:
         self.readcursor.execute("select value from permitted where attribute=?;", (name,))
         perms = [ row[0] for row in self.readcursor ]
         attrcheck = AttrCheck(name, typ, perms, lo, hi)
-        self.attrcheckmap[name] = attrcheck
+        self.attrcheckdict[name] = attrcheck
         return attrcheck
 
     def getattribute(self, name):
-        if self.attrcheckmap.has_key(name):
-            return self.attrcheckmap[name]
+        if self.attrcheckdict.has_key(name):
+            return self.attrcheckdict[name]
         else:
             return self.loadattribute(name)
 
     def delattribute(self, name, commit=defaultCommit):
-        if self.attrcheckmap.has_key(name):
-            del self.attrcheckmap[name]
+        if self.attrcheckdict.has_key(name):
+            del self.attrcheckdict[name]
         self.writecursor.execute("delete from attribute where name=?;", (name,))
         if commit:
             self.conn.commit()
@@ -732,17 +952,17 @@ class Database:
     def loadpermitted(self, attr):
         self.readcursor.execute("select val from permitted where attribute=?;", (attr,))
         perms = [ row[0] for row in self.readcursor ]
-        if self.attrcheckmap.has_key(attr):
-            attrcheck = self.attrcheckmap[attr]
+        if self.attrcheckdict.has_key(attr):
+            attrcheck = self.attrcheckdict[attr]
             attrcheck.lstcheck = ListCheck(perms)
         else:
             attrcheck = AttrCheck(attr, vals=perms)
-            self.attrcheckmap[attr] = attrcheck
+            self.attrcheckdict[attr] = attrcheck
         return attrcheck
 
     def getpermitted(self, attr):
-        if self.attrcheckmap.has_key(attr):
-            attrcheck = self.attrcheckmap[attr]
+        if self.attrcheckdict.has_key(attr):
+            attrcheck = self.attrcheckdict[attr]
             if isinstance(attrcheck, ListCheck):
                 return attrcheck.lst
             else:
@@ -794,7 +1014,7 @@ class Database:
             self.mkattribution(attr, item, val, commit)
 
     def writeattributionson(self, itemname, commit=defaultCommit):
-        for attrval in self.attrvalmap[itemname].iteritems():
+        for attrval in self.attrvaldict[itemname].iteritems():
             self.writeattribution(attrval[0], itemname, attrval[1], commit)
 
     def saveattributionson(self, item, commit=defaultCommit):
@@ -858,7 +1078,7 @@ class Database:
         self.readcursor.execute("select val from attribution where attribute=? and attributed_to=?;", (attr, item))
         v = self.readcursor.fetchone()[0]
         if self.getattribute(attr).check(v):
-            self.attrvalmap[item][attr] = v
+            self.attrvaldict[item][attr] = v
             return v
         else:
             raise ValueError("Loaded the value %s for the attribute %s, yet it isn't a legal value for that attribute. How did it get there?" % (str(v), attr))
@@ -868,23 +1088,23 @@ class Database:
         r = {}
         for row in self.readcursor:
             if self.getattribute(row[0]).check(row[1]):
-                self.attrvalmap[item][row[0]] = row[1]
+                self.attrvaldict[item][row[0]] = row[1]
             else:
                 raise ValueError("Loaded the value %s for the attribute %s, yet it isn't a legal value for that attribute. How did it get there?" % (str(row[1]), row[0]))
 
     def getattribution(self, attr, item):
-        if self.attrvalmap.has_key(item):
-            if self.attrvalmap[item].has_key[attr]:
-                return self.attrvalmap[item][attr]
+        if self.attrvaldict.has_key(item):
+            if self.attrvaldict[item].has_key[attr]:
+                return self.attrvaldict[item][attr]
             else:
                 return self.loadattribution(attr, item)
         else:
             return self.loadattribution(attr, item)
 
     def getattributionson(self, item):
-        if not self.attrvalmap.has_key(item):
+        if not self.attrvaldict.has_key(item):
             self.loadattributionson(item)
-        return self.attrvalmap[item]
+        return self.attrvaldict[item]
 
     def knowportal(self, orig_or_name, dest=None):
         if dest is None:
@@ -943,7 +1163,7 @@ class Database:
         self.writeportal(port.name, port.orig, port.dest, commit)
 
     def modportal(self, name, orig, dest):
-        port = self.portalmap[name]
+        port = self.portaldict[name]
         if port.orig is not orig or port.dest is not dest:
             port.orig = orig
             port.dest = dest
@@ -956,22 +1176,22 @@ class Database:
             return None
         attdict = self.getattributionson(name)
         port = Portal(name, row[0], row[1], attdict)
-        self.portalmap[name] = port
+        self.portaldict[name] = port
         return port
 
     def getportal(self, orig_or_name, dest=None):
-        if self.portalmap.has_key(orig_or_name):
-            return self.portalmap[orig_or_name]
+        if self.portaldict.has_key(orig_or_name):
+            return self.portaldict[orig_or_name]
         elif dest is not None:
-            if self.portalorigdestmap.has_key(orig_or_name):
-                if self.portalorigdestmap[orig_or_name].has_key(dest):
-                    return self.portalorigdestmap[orig_or_name][dest]
+            if self.portalorigdestdict.has_key(orig_or_name):
+                if self.portalorigdestdict[orig_or_name].has_key(dest):
+                    return self.portalorigdestdict[orig_or_name][dest]
                 else:
                     raise Exception("No portal connecting %s to %s." % (orig_or_name, dest))
             else:
                 raise Exception("No portals from %s." % orig_or_name)
-        elif self.portalorigdestmap.has_key(orig_or_name):
-            return self.portalorigdestmap[orig_or_name].values() # actual Portal objects
+        elif self.portalorigdestdict.has_key(orig_or_name):
+            return self.portalorigdestdict[orig_or_name].values() # actual Portal objects
         else:
             return self.loadportal(orig_or_name)
 
@@ -1012,7 +1232,7 @@ class Database:
         return self.knowall("spot", "(place)", tups)
 
     def havespot(self, place):
-        if self.spotmap.has_key(place):
+        if self.spotdict.has_key(place):
             return True
         else:
             return self.knowspot(place.name)
@@ -1048,12 +1268,12 @@ class Database:
                                 (placen, boardn))
         spottup = (self.getplace(placen), self.getboard(boardn)) + self.readcursor.fetchone()
         spot = Spot(*spottup)
-        self.spotmap[place] = spot
+        self.spotdict[place] = spot
         return spot
 
     def getspot(self, placen):
-        if self.spotmap.has_key(placen):
-            return self.spotmap[placen]
+        if self.spotdict.has_key(placen):
+            return self.spotdict[placen]
         else:
             return self.loadspot(placen)
 
@@ -1104,13 +1324,13 @@ class Database:
         badimgd.set_data('RGBA', badimgd.pitch, bad_rgba.replace('\xffGll','\x00Gll').replace('\xff.', '\x00.'))
         rtex = badimgd.get_texture()
         rtex.name = name
-        self.imgmap[name] = rtex
+        self.imgdict[name] = rtex
         return rtex
 
     def loadimgfile(self, name, path):
         tex = pyglet.resource.image(path).get_image_data().get_texture()
         tex.name = name
-        self.imgmap[name] = tex
+        self.imgdict[name] = tex
         return tex
 
     def loadimg(self, name):
@@ -1124,20 +1344,20 @@ class Database:
             return self.loadimgfile(name, row[1])
 
     def getimg(self, name):
-        if self.imgmap.has_key(name):
-            return self.imgmap[name]
+        if self.imgdict.has_key(name):
+            return self.imgdict[name]
         else:
             return self.loadimg(name)
 
     def delimg(self, name, commit=defaultCommit):
-        if self.imgmap.has_key(name):
-            del self.imgmap[name]
+        if self.imgdict.has_key(name):
+            del self.imgdict[name]
         self.writecursor.execute("delete from img where name=?;", (name,))
         if commit:
             self.conn.commit()
 
     def cullimgs(self, commit=defaultCommit):
-        keeps = self.imgmap.keys()
+        keeps = self.imgdict.keys()
         left = "delete from img where name not in ("
         middle = "?, " * (len(keeps) - 1)
         right = "?);"
@@ -1184,22 +1404,22 @@ class Database:
     def loadmenuitem(self, menuname, idx):
         self.readcursor.execute("select text, onclick, closer from menuitem where menu=? and idx=?;", (menuname, idx))
         row = self.readcursor.fetchone()
-        self.menuitemmap[menuname][idx] = row
+        self.menuitemdict[menuname][idx] = row
         return row
 
     def getmenuitem(self, menuname, idx):
-        if self.menuitemmap.has_key(menuname):
-            if self.menuitemmap[menuname].has_key(idx):
-                return self.menuitemmap[menuname][idx]
+        if self.menuitemdict.has_key(menuname):
+            if self.menuitemdict[menuname].has_key(idx):
+                return self.menuitemdict[menuname][idx]
             else:
                 return self.loadmenuitem(menuname, idx)
         else:
             return self.loadmenuitem(menuname, idx)
 
     def delmenuitem(self, menuname, i, commit=defaultCommit):
-        if self.menuitemmap.has_key(menuname):
-            if self.menuitemmap[menuname].has_key(i):
-                del self.menuitemmap[menuname][i]
+        if self.menuitemdict.has_key(menuname):
+            if self.menuitemdict[menuname].has_key(i):
+                del self.menuitemdict[menuname][i]
         self.writecursor.execute("delete from menuitem where menu=? and index=?;",
                                  (menuname, i))
         if commit:
@@ -1242,27 +1462,27 @@ class Database:
         tup = self.readcursor.fetchone()
         wall = self.getimg(tup[2])
         board = Board(tup[0], tup[1], wall)
-        self.boardmap[name] = board
+        self.boarddict[name] = board
         return board
 
     def getboard(self, name):
-        if self.boardmap.has_key(name):
-            return self.boardmap[name]
+        if self.boarddict.has_key(name):
+            return self.boarddict[name]
         else:
             return self.loadboard(name)
 
     def delboard(self, name, commit=defaultCommit):
-        if self.boardmap.has_key(name):
-            del self.boardmap[name]
+        if self.boarddict.has_key(name):
+            del self.boarddict[name]
         self.writecursor.execute("delete from board where name=?;", (name,))
         if commit:
             self.conn.commit()
 
     def knowpawn(self, item, board=None):
         if board is None:
-            self.readcursor.execute("select count(*) from pawn where item=?;", (item,))
+            self.readcursor.execute("select count(*) from pawn where thing=?;", (item,))
         else:
-            self.readcursor.execute("select count(*) from pawn where item=? and board=?;", (item, board))
+            self.readcursor.execute("select count(*) from pawn where thing=? and board=?;", (item, board))
         return self.readcursor.fetchone()[0] == 1
 
     def havepawn(self, pawn):
@@ -1278,7 +1498,7 @@ class Database:
         self.mkmany("pawn", tups)
 
     def updpawn(self, item, board, img, x, y, spot, commit=defaultCommit):
-        self.writecursor.execute("update pawn set img=?, x=?, y=?, spot=? where item=? and board=?;",
+        self.writecursor.execute("update pawn set img=?, x=?, y=?, spot=? where thing=? and board=?;",
                                  (img, x, y, spot, item, board))
         if commit:
             self.conn.commit()
@@ -1289,34 +1509,33 @@ class Database:
         else:
             self.mkpawn(item, board, img, x, y, spot, commit)
 
-    def loadpawn(self, itemn, boardn):
-        self.readcursor.execute("select img, x, y, spot from pawn where itemn=? and boardn=?;",
-                                (itemn, boardn))
-        (imgn, boardn, x, y, spotn) = self.readcursor.fetchone()
-        img = self.getimg(imgn)
-        item = self.getitem(itemn)
-        board = self.getboard(boardn)
-        spot = self.getspot(spotn)
-        pawn = Pawn(item, img, board, x, y, spot)
-        pawn.route = self.getroute(pawn)
-        self.pawnmap[boardn][itemn] = pawn
+    def loadpawn(self, thingn, boardn):
+        self.readcursor.execute("select thing, board, img, x, y, spot from pawn where thing=? and board=?;",
+                                (thingn, boardn))
+        pawnlst = list(self.readcursor.fetchone())
+        pawnlst[0] = self.getthing(pawnlst[0])
+        pawnlst[1] = self.getboard(pawnlst[1])
+        pawnlst[2] = self.getimg(pawnlst[2])
+        pawnlst[5] = self.getspot(pawnlst[5])
+        pawn = Pawn(*pawnlst)
+        self.pawndict[boardn][thingn] = pawn
         return pawn
 
     def getpawn(self, itemn, boardn):
-        if self.pawnmap.has_key(boardn) and self.pawnmap[itemn].has_key(itemn):
-            return self.pawnmap[boardn][itemn]
+        if self.pawndict.has_key(boardn) and self.pawndict[itemn].has_key(itemn):
+            return self.pawndict[boardn][itemn]
         else:
             return self.loadpawn(itemn, boardn)
 
     def delpawn(self, itemn, boardn, commit=defaultCommit):
-        if self.pawnmap.has_key(boardn) and self.pawnmap.has_key(itemn):
-            del self.pawnmap[boardn][itemn]
+        if self.pawndict.has_key(boardn) and self.pawndict.has_key(itemn):
+            del self.pawndict[boardn][itemn]
         self.writecursor.execute("delete from pawn where name=?;", (name,))
         if commit:
             self.conn.commit()
 
     def cullpawns(self, commit=defaultCommit):
-        keeps = self.pawnmap.keys()
+        keeps = self.pawndict.keys()
         left = "delete from pawn where name not in ("
         middle = "?, " * (len(keeps) - 1)
         right = "?);"
@@ -1344,18 +1563,18 @@ class Database:
         thing = self.getthing(thingn)
         dest = self.getplace(destn)
         route = Route(steps, thing, dest)
-        self.routemap[thingn][destn] = route
+        self.routedict[thingn][destn] = route
         return route
 
     def getroute(self, thingn, destn):
-        if self.routemap.has_key(thingn) and self.routemap[thingn].has_key(destn):
-            return self.routemap[thingn][destn]
+        if self.routedict.has_key(thingn) and self.routedict[thingn].has_key(destn):
+            return self.routedict[thingn][destn]
         else:
             return self.loadroute(thingn)
 
     def delroute(self, thingn, destn, commit=defaultCommit):
-        if self.routemap.has_key(thingn) and self.routemap[thingn].has_key(destn):
-            del self.routemap[thingn]
+        if self.routedict.has_key(thingn) and self.routedict[thingn].has_key(destn):
+            del self.routedict[thingn]
         self.writecursor.execute("delete from step where thing=? and destination=?;", (thingn, destn))
         if commit:
             self.conn.commit()
@@ -1396,18 +1615,18 @@ class Database:
         self.readcursor.execute("select name, red, green, blue from color where name=?;", (name,))
         color = Color(*self.readcursor.fetchone())
         color.name = name
-        self.colormap[name] = color
+        self.colordict[name] = color
         return color
 
     def getcolor(self, name):
-        if self.colormap.has_key(name):
-            return self.colormap[name]
+        if self.colordict.has_key(name):
+            return self.colordict[name]
         else:
             return self.loadcolor(name)
 
     def delcolor(self, name, commit=defaultCommit):
-        if self.colormap.has_key(name):
-            del self.colormap[name]
+        if self.colordict.has_key(name):
+            del self.colordict[name]
         self.writecursor.execute("delete from color where name=?;", (name,))
         if commit:
             self.conn.commit()
@@ -1467,18 +1686,18 @@ class Database:
         sty = Style(name, ff, fs, s, self.getcolor(bg_i),
                     self.getcolor(bg_a), self.getcolor(fg_i),
                     self.getcolor(fg_a))
-        self.stylemap[name] = sty
+        self.styledict[name] = sty
         return sty
 
     def getstyle(self, name):
-        if self.stylemap.has_key(name):
-            return self.stylemap[name]
+        if self.styledict.has_key(name):
+            return self.styledict[name]
         else:
             return self.loadstyle(name)
 
     def delstyle(self, name):
-        if self.stylemap.has_key(name):
-            del self.stylemap[name]
+        if self.styledict.has_key(name):
+            del self.styledict[name]
         if self.knowstyle(name):
             self.writecursor.execute("delete from style where name=?;", (name,))
 
@@ -1535,20 +1754,20 @@ class Database:
         self.readcursor.execute("select name, x, y, width, height, style, visible from menu where name=?;",
                                 (name,))
         menu = Menu(*self.readcursor.fetchone())
-        self.menumap[name] = menu
+        self.menudict[name] = menu
         return menu
         
     def getmenu(self, name):
-        if self.menumap.has_key(name):
-            return self.menumap[name]
+        if self.menudict.has_key(name):
+            return self.menudict[name]
         elif window is not None:
             return self.loadmenu(name)
         else:
             raise Exception("Could not load the menu: " + name)
 
     def delmenu(self, name, commit=defaultCommit):
-        if self.menumap.has_key(name):
-            del self.menumap[name]
+        if self.menudict.has_key(name):
+            del self.menudict[name]
         if self.knowmenu(name):
             self.writecursor.execute("delete from menu where name=?;", (name,))
         if commit:

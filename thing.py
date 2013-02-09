@@ -2,9 +2,9 @@ from place import Place
 from attrcheck import AttrCheck
 
 class Thing:
-    def __init__(self, name, physloc, atts={}):
+    def __init__(self, name, loc={}, atts={}):
         self.name = name
-        self.loc = { 'physical' : physloc }
+        self.loc = loc
         self.att = atts
         self.cont = []
         self.permissions = []

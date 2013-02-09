@@ -265,16 +265,16 @@ class Pawn:
     """
     # Coordinates should really be relative to the Board and not the
     # uh, canvas? is that what they are called in pyglet?
-    def __init__(self, thing, img, place):
+    def __init__(self, thing, board, img, x, y, place):
         self.thing = thing
+        self.board = board
         self.img = img
+        self.x = x
+        self.y = y
         self.place = place
-        self.x = place.x
-        self.y = place.y
-        self.curspot = self.wf.db.getspot(place.name)
         self.visible = False
     def addtobatch(self, batch, group=None):
-        return pyglet.sprite.Sprite(pawn.img, pawn.x, pawn.y, batch=self.batch, group=self.pawngroup)
+        return pyglet.sprite.Sprite(self.img, self.x, self.y, batch=batch, group=group)
             
 class Board:
     def __init__(self, width, height, texture):
@@ -307,6 +307,7 @@ class WidgetFactory:
         self.gamestate = gamestate
         self.window = window
         self.batch = batch
+        self.bggroup = pyglet.graphics.Group()
         self.menugroup = pyglet.graphics.Group()
         self.labelgroup = pyglet.graphics.Group()
         self.pawngroup = pyglet.graphics.Group()
@@ -336,13 +337,18 @@ class WidgetFactory:
         while self.delay > freq:
             reps += 1
             self.delay -= freq
-        for pawn in self.pawns:
+        for pawn in self.pawnsmade:
             pawn.move(reps)
     def on_draw(self):
-        drawn = []
+        drawn = [ self.board.addtobatch(self.batch, self.bggroup) ]
+        for menu in self.menusmade:
+            drawn.append(menu.addtobatch(self.batch, self.menugroup))
+        for label in self.labelsmade:
+            drawn.append(label.addtobatch(self.batch, self.labelgroup))
         for pawn in self.pawnsmade:
             drawn.append(pawn.addtobatch(self.batch, self.pawngroup))
-        
+        for spot in self.spotsmade:
+            drawn.append(spot.addtobatch(self.batch, self.spotgroup))
     def on_key_press(self, sym, mods):
         for listener in self.keyboard_listeners:
             if sym in listener.listen_to_keys:
@@ -430,7 +436,7 @@ class WidgetFactory:
             name = name_or_menu.name
         else:
             raise TypeError("I need a menu's name or a menu proper")
-        # saving the opened-ness of windows when 
+        # saving the opened-ness of windows when?
         self.db.savemenu(menu)
         del self.db.menumap[name]
         self.rmlistener(menu)
