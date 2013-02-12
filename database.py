@@ -2,10 +2,11 @@ import sqlite3
 from place import Place
 from portal import Portal
 from route import Route
-from widgets import *
+from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
-from attrcheck import *
+from attrcheck import  LowerBoundCheck, UpperBoundCheck, TypeCheck, ListCheck, AttrCheck
 from graph import Dimension, Map
+from pyglet.resource import image, Image
 
 defaultCommit=True
 testDB=False
@@ -37,6 +38,7 @@ def valuesknow(tab, keyexp, x, y):
     return "select count(*) from " + tab + " where " + keyexp + " in (" + valuesrows(x, y) + ");"
 
 def valuesget(tab, keynames, valnames, y):
+    # this is really ugly
     sl = ["select", " "]
     for keyname in keynames:
         sl.append(keyname)
@@ -158,7 +160,7 @@ class Database:
                         Portal : self.portaldict,
                         Thing : self.thingdict,
                         Spot : self.spotdict,
-                        pyglet.resource.image : self.imgdict,
+                        Image : self.imgdict,
                         Dimension : self.dimdict,
                         Board : self.boarddict,
                         Menu : self.menudict,
@@ -255,7 +257,7 @@ class Database:
             self.conn.commit()
 
     def knowany(self, tname, keyexp, keytups):
-        querystr = valsknow(tname, keyexp, len(keytups[0]), len(keytups))
+        querystr = valuesknow(tname, keyexp, len(keytups[0]), len(keytups))
         keys = untuple(keytups)
         self.readcursor.execute(querystr, keys)
         r = self.readcursor.fetchone()
@@ -269,7 +271,7 @@ class Database:
     def knowall(self, tname, keyexp, keytups):
         numkeys = len(keytups)
         keylen = len(keytups[0])
-        querystr = valsknow(tname, keyexp, keylen, numkeys)
+        querystr = valuesknow(tname, keyexp, keylen, numkeys)
         keys = untuple(keytups)
         self.readcursor.execute(querystr, keys)
         r = self.readcursor.fetchone()
@@ -285,10 +287,8 @@ class Database:
         querystr = valuesget(tname, keyexp, valexp, len(keytups))
         keylst = untuple(keytups)
         self.readcursor.execute(querystr, keylst)
-
         r = []
         keylen = len(keyexp)
-        vallen = len(valexp)
         for row in self.readcursor:
             # Create object of the class in question
             obj = clas(*row)
@@ -307,47 +307,26 @@ class Database:
             r.append(obj)
         return r
 
-    def remember(self, obj):
-        """ Store changes for immediate accessibility and eventual write to disk.
-        
-        Whenever you make a new object, or modify an existing
-        object, of a class that should be saved in the database, pass
-        the object to this method. The database will put it in the
-        appropriate dictionary and write it to disk when the time
-        comes.
-
-        """
-        if obj.__class__ not in self.classdict.keys():
-            raise TypeError("I have no idea how to remember this!")
-        m = self.classdict[obj.__class__]
-        if m.has_value(obj):
-            self.altered.append(obj)
-        elif m.has_key(obj.name): # SHOULDN'T happen--but just in case...
-            raise Exception("Duplicate LiSE object by the name of " + obj.name)
-        else:
-            self.new.append(obj)
-            m[obj.name] = obj
-
-    def knowdimension(name):
+    def knowdimension(self, name):
         self.readcursor.execute("select count(*) from dimension where name=?;")
         return self.readcursor.fetchone()[0] == 1
 
-    def havedimension(dim):
+    def havedimension(self, dim):
         return self.knowdimension(dim.name)
 
-    def mkdimension(name, commit=defaultCommit):
+    def mkdimension(self, name, commit=defaultCommit):
         self.writecursor.execute("insert into item values (?);", (name,))
         self.writecursor.execute("insert into dimension values (?);", (name,))
         if commit:
             self.conn.commit()
 
-    def mkmanydimension(tups, commit=defaultCommit):
+    def mkmanydimension(self, tups, commit=defaultCommit):
         self.mkmany("item", tups, commit=False)
         self.mkmany("dimension", tups, commit=False)
         if commit:
             self.conn.commit()
 
-    def loaddimension(name):
+    def loaddimension(self, name):
         # fetch all the places and portals in the dimension, then make the dimension
         self.readcursor.execute("select contained from containment where container=? join place on name=contained;", (name,))
         places = self.getmanyplace(self.readcursor)
@@ -381,13 +360,13 @@ class Database:
         self.dimdict.update(dimd)
         return dimd.itervalues()
 
-    def getdimension(name):
+    def getdimension(self, name):
         if self.dimdict.has_key(name):
             return self.dimdict[name]
         else:
             return self.loaddimension(name)
 
-    def getmanydimension(names):
+    def getmanydimension(self, names):
         unloaded = list(names)
         r = []
         for name in unloaded:
@@ -591,7 +570,7 @@ class Database:
 
     def loadthing(self, name):
         self.readcursor.execute("select container from containment where contained=?;", (name,))
-        loc_s = self.getcontainer(name)
+        locs = self.getcontainer(name)
         loc = self.getitem(loc_s)
         atts = self.getattributiondict(attribute=None, attributed_to=name)
         th = Thing(name, loc, atts)
@@ -602,6 +581,7 @@ class Database:
         # Presently, each item may be contained in up to one other item.
         # This works fine for the physical world model, but I may need more containment hierarchies for the other dimensions.
         # I guess I'll have to update containment and the functions that pull from it so they take the dimension into account.
+        
 
     def getthing(self, name):
         if self.thingdict.has_key(name):
@@ -638,20 +618,13 @@ class Database:
         else:
             return self.loaditem(name)
             
-    def knowcontainment(self, contained):
-        self.readcursor.execute("select count(*) from containment where contained=?;",
-                       (contained,))
-        return self.readcursor.fetchone()[0] == 1
+    def _container_loaded(self, contained, dimension):
+        return self.contained_in.has_key(dimension) and
+        self.contained_in[dimension].has_key(contained)
 
-    def knowsomecontainment(self, singletons):
-        return self.knowany("containment", "(contained)", singletons)
-
-    def knowallcontainment(self, singletons):
-        return self.knowall("containment", "(contained)", singletons)
-
-    def havecontainment(self, item):
-        contained = item.loc
-        return self.knowcontainment(item)
+    def _contents_loaded(self, container, dimension):
+        return self.contents.has_key(dimension) and
+        self.contents[dimension].has_key(contained)
 
     def mkcontainment(self, contained, container, dimension='Physical', commit=defaultCommit):
         self.writecursor.execute("insert into containment values (?, ?, ?);",
@@ -676,75 +649,112 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def modcontainment(self, contained, container, dimension='Physical'):
-        oldcontainer = self.contained_in[dimension][contained]
-        if oldcontainer == container:
-            return
-        self.contained_in[dimension][contained] = container
-        self.contents[dimension][oldcontainer].remove(contained)
-        self.contents[dimension][container].append(contained)
-
     def writecontainment(self, contained, container, dimension='Physical', commit=defaultCommit):
         if self.knowcontainment(contained, dimension):
             self.updcontainment(contained, container, dimension, commit)
         else:
             self.mkcontainment(contained, container, dimension, commit)
 
-    def savecontainment(self, contained, commit=defaultCommit):
-        for loc in contained.loc.iteritems():
-            self.writecontainment(contained, loc[1], loc[0])
-
-    def loadcontainment(self, containedn, dimensions=None):
-        # default is to load containment in all the dimensions
-        containers = []
-        if dimension is None:
-            self.readcursor.execute("select dimension, container from containment where contained=?;", (containedn,))
-            for row in self.readcursor:
-                containers.append(row)
-                (dimension, containern) = row
-                if not self.contained_in.has_key(dimension):
-                    self.contained_in[dimension] = {}
-                if not self.contents.has_key(dimension):
-                    self.contents[dimension] = {}
-                self.contained_in[dimension][containedn] = containern
-                if self.contents[dimension].has_key(containern):
-                    self.contents[dimension][containern].append(containedn)
-                else:
-                    self.contents[dimension][containern] = [containedn]
+    def loadcontainer(self, containedn, dimension='Physical'):
+        self.readcursor.execute("select dimension, contained, " +\
+                                "container from containment where contained=? and "+\
+                                "dimension=?;", (containedn, dimension))
+        row = self.readcursor.fetchone()
+        if len(row) == 0:
+            return None
         else:
-            for dimension in dimensions:
-                self.readcursor.execute("select container from containment where dimension=? and contained=?;", (dimension, containedn))
-                if not self.contained_in.has_key(dimension):
-                    self.contained_in[dimension] = {}
-                if not self.contents.has_key(dimension):
-                    self.contents[dimension] = {}
-                for row in self.readcursor:
-                    containern = row[0]
-                    containers.append((dimension, containern))
-                    if self.contents[dimension].has_key(containern):
-                        self.contents[dimension][containern].append(containedn)
-                    else:
-                        self.contents[dimension][containern] = [containedn]
-                    self.contained_in[dimension][containedn] = containern
-        return containers
+            self._contain(*row)
+            return row[2]
 
-    def getcontainment(self, contained, dimensions=None):
-        containers = []
+    def loadcontents(self, container, dimension='Physical'):
+        self.readcursor.execute("select dimension, contained, container " +\
+                                "from containment where container=? and " +\
+                                "dimension=?;", (container, dimension))
+        r = self.readcursor.fetchall()
+        for row in r:
+            self._contain(*row)
+        return r
+
+    def loadmanycontainer(self, contained, dimensions=None):
+        r = {}
+        left = "select dimension, contained, container " +\
+               "from containment where contained in ("
+        qm = ", ".join(["?"] * len(contained))
         if dimensions is None:
-            self.readcursor.execute("select name from dimension;")
-            known_dimensions = [ row[0] for row in self.readcursor ]
-            for dim in known_dimensions:
-                if self.contained_in.has_key(dim) and self.contained_in[dim].has_key(contained):
-                    containers.append(self.contained_in[dim][contained])
-                else:
-                    containers += self.loadcontainment(contained, dim)
+            qrystr = left + qm + ");"
+            self.readcursor.execute(qrystr, contained)
         else:
-            for dimension in dimensions:
-                if self.contained_in.has_key(dimension) and self.contained_in[dimension].has_key(contained):
-                    containers.append((dimension, self.contained_in[dimension][contained]))
+            qrystr = left + qm + ") and dimension in (" \
+                     + ", ".join(["?"] * len(dimensions)) + ");"
+            self.readcursor.execute(qrystr, contained + dimensions)
+        for row in self.readcursor:
+            (dim, inside, outside) = row
+            if not r.has_key(dim):
+                r[dim] = {}
+            r[dim][inside] = outside
+            self._contain(dimension, inside, outside)
+        return r
+
+    def _contain(self, dimension, contained, container):
+        "Internal use"
+        # Update the containment dictionaries without touching the
+        # database.  That means insert contained into container under
+        # dimension, append contained unto the contents of container
+        # under dimension, and if contained already had a container,
+        # find it, call it oldcontainer, and remove contained from the
+        # contents of oldcontainer under dimension.
+        if not self.contents.has_key(dimension):
+            self.contents[dimension] = {}
+        if not self.contained_in.has_key(dimension):
+            self.contained_in[dimension] = {}
+        if not self.contents[dimension].has_key(container):
+            self.contents[dimension][container] = [contained]
+        else:
+            self.contents[dimension][container].append(contained)
+        oldcontainer = self.getcontainer(contained, dimension)
+        self.contained_in[dimension][contained] = container
+        if oldcontainer is not None:
+            self.contents[dimension][oldcontainer].remove(contained)
+
+    def getcontainer(self, contained, dimension='Physical'):
+        if self.contained_in.has_key(dimension) and
+        self.contained_in[dimension].has_key(contained):
+            return self.contained_in[dimension][contained]
+        else:
+            return self.loadcontainer(contained, dimension)
+
+    def getmanycontainer(self, contents, dimensions=None):
+        r = {} # in dimension x, y is contained in z
+        if dimensions is None:
+            dimensions = self.contained_in.iterkeys()
+        for dimension in dimensions:
+            if not r.has_key(dimension):
+                r[dimension] = {}
+            for contained in contents:
+                if self.contained_in[dimension].has_key(contained):
+                    r[dimension][contained] = self.contained_in[dimension][contained]
                 else:
-                    containers += self.loadcontainment(contained, dimension)
-        
+                    r[dimension][contained] = self.loadcontainer(contained, dimension)
+        return r
+
+    def getcontents(self, container, dimension='Physical'):
+        if self.contents.has_key(dimension) and
+        self.contents[dimension].has_key(container):
+            return self.contents[dimension][container]
+
+    def getmanycontents(self, containers, dimensions=None):
+        r = {} # in dimension x, y contains [z1, z2, ...]
+        if dimensions is None:
+            dimensions = self.contents.iterkeys()
+        for dimension in dimensions:
+            if not r.has_key(dimension):
+                r[dimension] = {}
+            for container in containers:
+                if self.contents[dimension].has_key(container):
+                    r[dimension][container] = self.contents[dimension][container]
+                else:
+                    r[dimension][container] = self.loadcontents(container, dimension)
+        return r
 
     def cullcontainment(self, container, keeps=[], commit=defaultCommit):
         if len(keeps) == 0:
@@ -758,9 +768,6 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def getcontainer(self, contained):
-        return self.getcontainment(contained)
-
     def knowcontents(self, container):
         self.readcursor.execute("select count(*) from containment where container=?;",
                                 (container,))
@@ -768,23 +775,6 @@ class Database:
 
     def havecontents(self, container):
         return self.knowcontents(container.name)
-
-    def loadcontents(self, container):
-        self.readcursor.execute("select contained from containment where container=?;",
-                                (container,))
-        c = []
-        for contained in self.readcursor:
-            if not self.contained_in.has_key(contained[0]):
-                self.contained_in[contained[0]] = container
-            c.append(contained[0])
-        self.contents[container] = c
-        return c
-
-    def getcontents(self, container):
-        if self.contents.has_key(container):
-            return self.contents[container]
-        else:
-            return self.loadcontents(container)
 
     def knowattribute(self, name):
         self.readcursor.execute("select count(*) from attribute where name=?;", (name,))
@@ -890,11 +880,40 @@ class Database:
         self.attrcheckdict[name] = attrcheck
         return attrcheck
 
+    def loadmanyattribute(self, names):
+        r = []
+        qrystr = valuesget("attribute", ("name",), ("type", "lower", "upper"), len(names))
+        self.readcursor.execute(qrystr, names)
+        ntlu_rows = self.readcursor.fetchall()
+        qrystr = valuesget("permitted", ("attribute",), ("value",), len(names))
+        self.readcursor.execute(qrystr, names)
+        perm_dict = {}
+        for row in self.readcursor:
+            (att, val) = row
+            if perm_dict.has_key(att):
+                perm_dict[att].append(val)
+            else:
+                perm_dict[att] = [val]
+        for row in ntlu_rows:
+            (name, typ, lo, hi) = row
+            if perm_dict.has_key(name):
+                r.append(AttrCheck(name, typ, perm_dict[name], lo, hi))
+            else:
+                r.append(AttrCheck(name, typ, [], lo, hi))
+        for ac in r:
+            self.attrcheckdict[ac.name] = ac
+        return r
+
     def getattribute(self, name):
         if self.attrcheckdict.has_key(name):
             return self.attrcheckdict[name]
         else:
             return self.loadattribute(name)
+
+    def getmanyattribute(self, names):
+        unloaded = [ name for name in names if name not in self.attrcheckmap.iterkeys() ]
+        self.loadmanyattribute(unloaded)
+        return [ self.attrcheckmap[name] for name in names ]
 
     def delattribute(self, name, commit=defaultCommit):
         if self.attrcheckdict.has_key(name):
@@ -924,7 +943,7 @@ class Database:
             return self.knowall("permitted", "(attribute, value)", attrval)
 
     def havepermitted(self, attrcheck):
-        perms = [ n for n in check.lst for check in attrcheck.checks if isinstance(check, ListCheck) ]
+        perms = [ check.lst for check in attrcheck.checks if isinstance(check, ListCheck) ]
         numperm = len(perms)
         left = "select count(*) from permitted where attribute=? and value in ("
         middle = "?, " * numperm - 1
@@ -1065,7 +1084,7 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def set_attr_type(self, attr, typ):
+    def set_attr_type(self, attr, typ, commit=defaultCommit):
         self.readcursor.execute("select count(*) from attribute where name=?;", (attr,))
         if self.readcursor.fetchone()[0] == 0:
             self.writecursor.execute("insert into attribute values (?, ?, ?, ?);", (attr, typ, None, None))
@@ -1091,6 +1110,7 @@ class Database:
                 self.attrvaldict[item][row[0]] = row[1]
             else:
                 raise ValueError("Loaded the value %s for the attribute %s, yet it isn't a legal value for that attribute. How did it get there?" % (str(row[1]), row[0]))
+        return r
 
     def getattribution(self, attr, item):
         if self.attrvaldict.has_key(item):
@@ -1268,14 +1288,16 @@ class Database:
                                 (placen, boardn))
         spottup = (self.getplace(placen), self.getboard(boardn)) + self.readcursor.fetchone()
         spot = Spot(*spottup)
-        self.spotdict[place] = spot
+        if not self.spotdict.has_key(boardn):
+            self.spotdict[boardn] = {}
+        self.spotdict[boardn][placen] = spot
         return spot
 
-    def getspot(self, placen):
-        if self.spotdict.has_key(placen):
-            return self.spotdict[placen]
+    def getspot(self, placen, boardn):
+        if self.spotdict.has_key(boardn) and self.spotdict[boardn].has_key(placen):
+            return self.spotdict[boardn][placen]
         else:
-            return self.loadspot(placen)
+            return self.loadspot(placen, boardn)
 
     def delspot(self, place, commit=defaultCommit):
         self.writecursor.execute("delete from spot where place=?;", (place,))
@@ -1318,7 +1340,7 @@ class Database:
             self.mkimg(name, path, rl, commit)
 
     def loadrltile(self, name, path):
-        badimg = pyglet.resource.image(path)
+        badimg = image(path)
         badimgd = badimg.get_image_data()
         bad_rgba = badimgd.get_data('RGBA', badimgd.pitch)
         badimgd.set_data('RGBA', badimgd.pitch, bad_rgba.replace('\xffGll','\x00Gll').replace('\xff.', '\x00.'))
@@ -1328,7 +1350,7 @@ class Database:
         return rtex
 
     def loadimgfile(self, name, path):
-        tex = pyglet.resource.image(path).get_image_data().get_texture()
+        tex = image(path).get_image_data().get_texture()
         tex.name = name
         self.imgdict[name] = tex
         return tex
@@ -1504,7 +1526,7 @@ class Database:
             self.conn.commit()
 
     def writepawn(self, item, board, img, x, y, spot, commit=defaultCommit):
-        if self.knowpawn(name):
+        if self.knowpawn(item):
             self.updpawn(item, board, img, x, y, spot, commit)
         else:
             self.mkpawn(item, board, img, x, y, spot, commit)
@@ -1530,7 +1552,7 @@ class Database:
     def delpawn(self, itemn, boardn, commit=defaultCommit):
         if self.pawndict.has_key(boardn) and self.pawndict.has_key(itemn):
             del self.pawndict[boardn][itemn]
-        self.writecursor.execute("delete from pawn where name=?;", (name,))
+        self.writecursor.execute("delete from pawn where name=?;", (itemn,))
         if commit:
             self.conn.commit()
 
@@ -1760,10 +1782,8 @@ class Database:
     def getmenu(self, name):
         if self.menudict.has_key(name):
             return self.menudict[name]
-        elif window is not None:
-            return self.loadmenu(name)
         else:
-            raise Exception("Could not load the menu: " + name)
+            return self.loadmenu(name)
 
     def delmenu(self, name, commit=defaultCommit):
         if self.menudict.has_key(name):
