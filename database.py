@@ -212,6 +212,7 @@ class Database:
         self.placedict = {}
         self.portaldict = {}
         self.portalorigdestdict = {}
+        self.portaldestorigdict = {}
         self.thingdict = {}
         self.spotdict = {}
         self.imgdict = {}
@@ -227,6 +228,10 @@ class Database:
         self.contained_in = {}  # This maps strings to other strings,
                                 # not to Python objects.
         self.contents = {}  # ditto
+        self.contents2 = {}
+        # contents2 uses the container name as the first key, and then
+        # the dimension name. This is pretty much only used for the
+        # loadmanyplace method. I'd like to get rid of it...
         self.classdict = {Place: self.placedict,
                           Portal: self.portaldict,
                           Thing: self.thingdict,
@@ -462,9 +467,6 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def updplace(self, name, commit=defaultCommit):
-        pass
-
     def mkmanyplace(self, placetups, commit=defaultCommit):
         self.mkmany("thing", placetups, commit=False)
         self.mkmany("place", placetups, commit=False)
@@ -500,13 +502,12 @@ class Database:
 
     def loadmanyplace(self, names):
         # portals
-
         questionmarks = ["?"] * len(names)
         qmstr = ", ".join(questionmarks)
-        querystr = "select from_place, name from portal where from_place in "\
+        querystr = "select name from portal where from_place in "\
                    "(" + qmstr + ");"
         self.readcursor.execute(querystr, names)
-        place2port = {}
+        portrows = self.readcursor.fetchall()
         for row in self.readcursor:
             if row[0] in place2port:
                 place2port[row[0]].append(row[1])
@@ -514,15 +515,10 @@ class Database:
                 place2port[row[0]] = [row[1]]
         # things. not bothering to check for thingness, containment is
         # supposed to do that
-        querystr = "select container, contained from containment "\
+        querystr = "select contained from containment "\
                    "where container in (" + qmstr + ");"
         self.readcursor.execute(querystr, names)
-        place2thing = {}
-        for row in self.readcursor:
-            if row[0] in place2thing:
-                place2thing[row[0]].append(row[1])
-            else:
-                place2thing[row[0]] = [row[1]]
+        thingrows = self.readcursor.fetchall()
         # attributes
         querystr = "select attributed_to, attribute, value from attribution "\
                    "where attributed_to in (" + qmstr + ");"
@@ -531,38 +527,21 @@ class Database:
         for row in self.readcursor:
             if row[0] not in place2attr:
                 place2attr[row[0]] = {}
-            if row[1] not in place2attr[row[0]]:
-                place2attr[row[0]][row[1]] = []
-            place2attr[row[0]][row[1]].append(row[2])
-        # Currently all these dicts just map strings to other strings
-        # indirectly.  I need to get the objects the strings refer to,
-        # and for performance sake I want to do so in bulk.  This is
-        # easy to do if I can get the values in a list and keep them
-        # in order...  So? Get them in order, man!
-        place2portkeys = place2port.iterkeys()
-        place2portvals = place2port.itervalues()
-        ports = iter(self.getmanyportal(place2portvals))
-        while True:
-            try:
-                key = place2portkeys.next()
-                val = ports.next()
-                place2port[key] = val
-            except:
-                break
-        place2thingkeys = place2thing.iterkeys()
-        place2thingvals = place2thing.itervalues()
-        things = iter(self.getmanythings(place2thingvals))
-        while True:
-            try:
-                key = place2thingkeys.next()
-                val = things.next()
-                place2thing[key] = val
-            except:
-                break
+            place2attr[row[0]][row[1]] = row[2]
+        # I have the name of every thing and portal in this place, but
+        # I want the Python objects of them.  Normally I'd call
+        # getmanything and then assign them en masse but in this case
+        # it would cause problems matching the thing to the place it's
+        # in. So I'll call getmanything and then look things up in the
+        # containment map.
+        portnames = untuple(portrows)
+        self.getmanyportal(portnames) # I need to write this method
+        thingnames = untuple(thingrows)
+        self.getmanything(thingnames)
         r = []
         for name in names:
-            p = Place(name, place2attr[name], place2thing[name],
-                      place2port[name])
+            p = Place(name, place2attr[name], self.getcontents(name),
+                      self.getportalsfrom(name))
             self.placedict[name] = p
             r.append(p)
         return r
@@ -792,6 +771,12 @@ class Database:
             self.contents[dimension][container] = [contained]
         else:
             self.contents[dimension][container].append(contained)
+        if container not in self.contents2:
+            self.contents2[container] = {}
+        if dimension not in self.contents2[container]:
+            self.contents2[container][dimension] = [contained]
+        else:
+            self.contents2[container][dimension].append(contained)
         oldcontainer = self.getcontainer(contained, dimension)
         self.contained_in[dimension][contained] = container
         if oldcontainer is not None:
@@ -1357,6 +1342,12 @@ class Database:
             port.dest = dest
             self.altered.append(port)
 
+    def _connect(self, port):
+        "Internal use"
+        self.portaldict[port.name] = port
+        self.portalorigdestdict[port.orig][port.dest] = port
+        self.portaldestorigdict[port.dest][port.orig] = port
+
     def loadportal(self, name):
         qrystr = "select from_place, to_place from portal where name=?"
         self.readcursor.execute(qrystr, (name,))
@@ -1365,25 +1356,34 @@ class Database:
             return None
         attdict = self.getattributionson(name)
         port = Portal(name, row[0], row[1], attdict)
-        self.portaldict[name] = port
+        self._connect(port)
         return port
 
-    def getportal(self, orig_or_name, dest=None):
-        if orig_or_name in self.portaldict:
-            return self.portaldict[orig_or_name]
-        elif dest is not None:
-            if orig_or_name in self.portalorigdestdict:
-                if dest in self.portalorigdestdict:
-                    return self.portalorigdestdict[orig_or_name][dest]
-                else:
-                    raise Exception("No portal connecting %s to %s."
-                                    % (orig_or_name, dest))
-            else:
-                raise Exception("No portals from %s." % orig_or_name)
-        elif orig_or_name in self.portalorigdestdict:
-            return self.portalorigdestdict[orig_or_name].values()
+    def loadportalsfrom(self, orig):
+        qrystr = "select name, from_place, to_place "\
+                 "from portal where from_place=?"
+        self.readcursor.execute(qrystr, (orig,))
+        r = {}
+        for row in self.readcursor:
+            name = row[0]
+            dest = row[2]
+            attdict = self.getattributionson(name)
+            port = Portal(name, orig, dest, attdict)
+            r[name] = port
+            self._connect(port)
+        return r
+
+    def getportal(self, name):
+        if name in self.portaldict:
+            return self.portaldict[name]
         else:
-            return self.loadportal(orig_or_name)
+            return self.loadportal(name)
+
+    def getportalsfrom(self, orig):
+        if orig in self.portalorigdestdict:
+            return self.portalorigdestdict[orig].values()
+        else:
+            return self.loadportalsfrom(orig)
 
     def delportal(self, orig_or_name, dest=None, commit=defaultCommit):
         if dest is None:
