@@ -1,12 +1,12 @@
-from place import Place
 from attrcheck import AttrCheck
 
+
 class Thing:
-    def __init__(self, name, loc={}, atts={}):
+    def __init__(self, name, loc={}, atts={}, cont=[]):
         self.name = name
         self.loc = loc
         self.att = atts
-        self.cont = []
+        self.cont = cont
         self.permissions = []
         self.forbiddions = []
         self.permit_inspections = []
@@ -17,17 +17,21 @@ class Thing:
     #     else:
     #         loc = str(self.location)
     #     return self.name + "@" + loc + str(self.attribute)
+
     def __getitem__(self, i):
         return self.att[i]
+
     def getloc(self, dimension):
         return self.loc[dimension]
+
     def physloc(self):
         return self.loc['physical']
+
     def add_item(self, it):
         if it in self.cont:
             return False
         elif self.permitted(it):
-            self.cont.append(i)
+            self.cont.append(it)
             return True
         elif self.forbidden(it):
             return False
@@ -36,18 +40,22 @@ class Thing:
             return True
         else:
             return False
+
     def permit_item(self, it):
         self.forbiddions.remove(it)
         self.permissions.append(it)
+
     def forbid_item(self, it):
         self.permissions.remove(it)
         self.forbiddions.append(it)
+
     def add_inspection(self, attrn, vals, lower, upper, permit):
         spect = AttrCheck(attrn, vals, lower, upper)
         if permit:
             self.permit_inspections.append(spect)
         else:
             self.forbid_inspections.append(spect)
+
     def attrcheck_permit(self, attrn, vals, lower, upper):
         """When I receive an instruction to add an item, if the item is
         in neither permissions nor forbiddions, I will see if its
@@ -59,7 +67,9 @@ class Thing:
         if so, add it to contents. Finally, proceed to the next
         inspection."""
         self.add_inspection(attrn, vals, lower, upper, True)
+
     def attrcheck_forbid(self, attrn, vals, lower, upper):
         self.add_inspection(attrn, vals, lower, upper, False)
 
-# TODO: methods of Thing to get instances of those classes and inspect items who want to enter to make sure they pass.
+# TODO: methods of Thing to get instances of those classes and inspect
+# items who want to enter to make sure they pass.

@@ -245,15 +245,12 @@ class Database:
         # call that function. Not sure how yet.
         self.func = {'saveplace': self.saveplace,
                      'getplace': self.getplace,
-                     'delplace': self.delplace,
                      'savething': self.savething,
                      'getthing': self.getthing,
-                     'delthing': self.delthing,
                      'getitem': self.getitem,
                      'getattribute': self.getattribute,
                      'saveattribute': self.saveattribute,
-                     'writeattribute': self.writeattribute,
-                     'delattribute': self.delattribute}
+                     'writeattribute': self.writeattribute}
         self.typ = {'str': str,
                     'int': int,
                     'float': float,
@@ -649,13 +646,17 @@ class Database:
         return th
 
     def loadmanything(self, names):
-        # Presently, each item may be contained in up to one other
-        # item.  This works fine for the physical world model, but I
-        # may need more containment hierarchies for the other
-        # dimensions.  I guess I'll have to update containment and the
-        # functions that pull from it so they take the dimension into
-        # account.
-        pass
+        th = {}
+        outer = self.getmanycontainer(names)
+        inner = self.getmanycontents(names)
+        atts = self.getattributionsonmany(names)
+        for it in names:
+            loc = outer[it]
+            cont = inner[it]
+            att = atts[it]
+            th[it] = Thing(it, loc, att, cont)
+        self.thingdict.update(th)
+        return th
 
     def getthing(self, name):
         if name in self.thingdict:
@@ -1093,6 +1094,12 @@ class Database:
         if commit:
             self.conn.commit()
 
+    def _attribute(self, item, att, val):
+        "internal use"
+        if not item in self.attrvalmap:
+            self.attrvalmap[item] = {}
+        self.attrvalmap[item][att] = val
+
     def knowattribution(self, attr, item):
         qrystr = "select count(*) from attribution where attribute=? "\
                  "and attributed_to=?;"
@@ -1215,27 +1222,43 @@ class Database:
                  "and attributed_to=?;"
         self.readcursor.execute(qrystr, (attr, item))
         v = self.readcursor.fetchone()[0]
-        if self.getattribute(attr).check(v):
-            self.attrvaldict[item][attr] = v
-            return v
-        else:
-            raise ValueError("Loaded the value %s for the attribute %s, "
-                             "yet it isn't a legal value for that "
-                             "attribute. How did it get there?" %
-                             (str(v), attr))
+        self._attribute(item, attr, v)
+        return v
+
+    def loadmanyattribution(self, pairs):
+        qrystr = valuesget("attribution", ("attribute", "attributed_to"),
+                           ("value"))
+        qrylst = untuple(pairs)
+        self.readcursor.execute(qrystr, qrylst)
+        r = {}
+        for row in self.readcursor:
+            if row[1] not in r:
+                r[row[1]] = {}
+            r[row[1]][row[0]] = row[2]
+            self._attribute(row[1], row[0], row[2])
 
     def loadattributionson(self, item):
         qrystr = "select attr, val from attribution where attributed_to=?;"
         self.readcursor.execute(qrystr, (item,))
         r = {}
+        if item not in self.attrvaldict:
+            self.attrvaldict[item] = {}
         for row in self.readcursor:
-            if self.getattribute(row[0]).check(row[1]):
-                self.attrvaldict[item][row[0]] = row[1]
-            else:
-                raise ValueError("Loaded the value %s for the attribute %s, "
-                                 "yet it isn't a legal value for that "
-                                 "attribute. How did it get there?" %
-                                 (str(row[1]), row[0]))
+            r[row[0]] = row[1]
+            self.attrvaldict[item][row[0]] = row[1]
+        return r
+
+    def loadattributionsonmany(self, items):
+        qrystr = valuesget("attribution", ("attribute", "attributed_to"),
+                           ("value"), len(items))
+        qrylst = untuple(items)
+        self.readcursor.execute(qrystr, qrylst)
+        r = {}
+        for row in self.readcursor:
+            if row[1] not in r:
+                r[row[1]] = {}
+            r[row[1]][row[0]] = row[2]
+            self._attribute(row[1], row[0], row[2])
         return r
 
     def getattribution(self, attr, item):
@@ -1251,6 +1274,22 @@ class Database:
         if item not in self.attrvaldict:
             self.loadattributionson(item)
         return self.attrvaldict[item]
+
+    def getattributionsonmany(self, items):
+        loaded = items
+        unloaded = []
+        i = 0
+        l = len(loaded)
+        while i < l:
+            if loaded[i] not in self.attrvaldict:
+                unloaded.append(loaded[i])
+                del loaded[i]
+            i += 1
+        a = {}
+        for item in loaded:
+            a[item] = self.attrvaldict[item]
+        a.update(self.loadattributionsonmany(items))
+        return a
 
     def knowportal(self, orig_or_name, dest=None):
         if dest is None:
@@ -2046,4 +2085,5 @@ if testDB:
                                            val[0], val[1], test)
 
     dtc = DatabaseTestCase()
+
     dtc.runTest()
