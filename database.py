@@ -1,22 +1,22 @@
 import sqlite3
 from place import Place
 from portal import Portal
-from route import Route
 from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
 from attrcheck import LowerBoundCheck, UpperBoundCheck, \
     TypeCheck, ListCheck, AttrCheck
-from graph import Dimension
-from pyglet.resource import image, Image
+from graph import Dimension, Map, Route
+from pyglet.resource import image
+from pyglet.image import Texture, TextureRegion
 
 tabs = ["""create table item (name text primary key);""",
         """create table dimension (name text primary key);""",
         """create table place (name text primary key, dimension text, foreign
 key(name) references item(name), foreign key(dimension) references
 dimension(name));""",
-        """create table thing (name text primary key, dimension text, foreign
+        """create table thing (name text primary key, foreign
 key(name) references item(name));""",
-        """create table portal (name text primary key, dimension text, map
+        """create table portal (name text primary key, map
 text, from_place text, to_place text, foreign key(name) references
 item(name), foreign key(dimension) references dimension(name), foreign
 key(map) references map(name), foreign key(from_place) references
@@ -24,8 +24,8 @@ place(name), foreign key(to_place) references place(name),
 check(from_place<>to_place));""",
         """create table map (name text primary key, dimension text, foreign
 key(dimension) references dimension(name));""",
-        """create table mappedness (item text, map text, foreign key(item)
-references item(name), foreign key(map) references map(name));""",
+        """create table mappedness (place text, map text, foreign key(place)
+references place(name), foreign key(map) references map(name));""",
         """create table containment (dimension text, contained text, container
 text, foreign key(dimension) references dimension(name), foreign
 key(contained) references item(name), foreign key(container)
@@ -139,6 +139,18 @@ def valuesget(tab, keynames, valnames, y):
     return "".join(sl + vallst) + ";"
 
 
+def haskeytup(dic, tup):
+    i = 0
+    lookup = dic
+    while i < len(tup):
+        try:
+            lookup = lookup[tup[i]]
+            i += 1
+        except KeyError:
+            return False
+    return True
+
+
 class Database:
     """Method naming conventions:
 
@@ -207,7 +219,6 @@ class Database:
         self.conn = sqlite3.connect(dbfile)
         self.readcursor = self.conn.cursor()
         self.writecursor = self.conn.cursor()
-        self.new = []
         self.altered = []
         self.placedict = {}
         self.portaldict = {}
@@ -217,11 +228,12 @@ class Database:
         self.spotdict = {}
         self.imgdict = {}
         self.dimdict = {}
+        self.attributiondict = {}
+        self.attrcheckdict = {}
+        self.mapdict = {}
         self.boarddict = {}
         self.menudict = {}
         self.menuitemdict = {}
-        self.attrvaldict = {}
-        self.attrcheckdict = {}
         self.pawndict = {}
         self.styledict = {}
         self.colordict = {}
@@ -229,23 +241,10 @@ class Database:
                                 # not to Python objects.
         self.contents = {}  # ditto
         self.contents2 = {}
-        # contents2 uses the container name as the first key, and then
+        # self.contents2 uses the container name as the first key, and then
         # the dimension name. This is pretty much only used for the
         # loadmanyplace method. I'd like to get rid of it...
-        self.classdict = {Place: self.placedict,
-                          Portal: self.portaldict,
-                          Thing: self.thingdict,
-                          Spot: self.spotdict,
-                          Image: self.imgdict,
-                          Dimension: self.dimdict,
-                          Board: self.boarddict,
-                          Menu: self.menudict,
-                          MenuItem: self.menuitemdict,
-                          AttrCheck: self.attrcheckdict,
-                          Pawn: self.pawndict,
-                          Style: self.styledict,
-                          Color: self.colordict}
-        # This maps strings to functions,
+        # self.func his maps strings to functions,
         # giving a user with access to the database the ability to
         # call that function. Not sure how yet.
         self.func = {'saveplace': self.saveplace,
@@ -260,6 +259,7 @@ class Database:
                     'int': int,
                     'float': float,
                     'bool': bool}
+        self.saver = {}
         self.func.update(xfuncs)
 
     def __del__(self):
@@ -333,33 +333,68 @@ class Database:
         else:
             return False
 
-    def loadmany(self, tname, keyexp, valexp, keytups, clas):
-        # TODO test the fuck out of this
-        querystr = valuesget(tname, keyexp, valexp, len(keytups))
-        keylst = untuple(keytups)
-        self.readcursor.execute(querystr, keylst)
-        r = []
-        keylen = len(keyexp)
-        for row in self.readcursor:
-            # Create object of the class in question
-            obj = clas(*row)
-            # Get the map to store it in
-            key = row[:keylen]
-            m = self.classdict[clas]
-            # Create the map if it doesn't exist yet
-            while len(key) > 1:
-                if key[0] not in m:
-                    m[key[0]] = {}
-                m = m[key[0]]
-                key = key[1:]
-            # At last, assign the key to the object
-            m[key[0]] = obj
-            # and put it in the list to be returned
-            r.append(obj)
-        return r
+    def alter(self, obj):
+        "Pass an object here to have the database remember it, both in the"
+        "short term and eventually on the disk."
+        if isinstance(obj, Dimension):
+            self.dimdict[obj.name] = obj
+        elif isinstance(obj, Place):
+            self.placedict[obj.name] = obj
+            self.attributiondict[obj.name] = obj.att
+        elif isinstance(obj, Portal):
+            self.portaldict[obj.name] = obj
+            podd = self.portalorigdestdict
+            pdod = self.portaldestorigdict
+            podd[obj.origin.name][obj.destination.name] = obj
+            pdod[obj.destination.name][obj.origin.name] = obj
+            self.attributiondict[obj.name] = obj.att
+        elif isinstance(obj, Thing):
+            self.thingdict[obj.name] = obj
+            self.attributiondict[obj.name] = obj.att
+        elif isinstance(obj, Spot):
+            self.spotdict[obj.place.name] = obj
+        elif isinstance(obj, Board):
+            self.boarddict[obj.name] = obj
+        elif isinstance(obj, Menu):
+            self.menudict[obj.name] = obj
+        elif isinstance(obj, MenuItem):
+            self.menuitemdict[obj.name] = obj
+        elif isinstance(obj, Pawn):
+            self.pawndict[obj.thing.name][obj.board.name] = obj
+        elif isinstance(obj, Style):
+            self.styledict[obj.name] = obj
+        elif isinstance(obj, Color):
+            self.colordict[obj.name] = obj
+        elif isinstance(obj, Map):
+            self.mapdict[obj.name] = obj
+        else:
+            raise Exception("I have nowhere to put this!")
+        self.altered.append(obj)
+
+        def sync(self):
+            "Call this to write all altered objects to the database on disk."
+            for clas in self.saver.keys():
+                checked = []
+                clasobjs = []
+                while len(self.altered) > 0:
+                    altered = self.altered.pop()
+                    if isinstance(altered, clas):
+                        clasobjs.append(altered)
+                    else:
+                        checked.append(altered)
+                self.altered = checked
+                saver = self.manysaver[clas]
+                saver(clasobjs, commit=False)
+            if len(altered) > 0:
+                raise Exception("While syncing, found some altered objects "\
+                                "that I don't know how to save.")
+                self.conn.rollback()
+            else:
+                self.conn.commit()
 
     def knowdimension(self, name):
-        self.readcursor.execute("select count(*) from dimension where name=?;")
+        qrystr = "select count(*) from dimension where name=? limit 1;"
+        self.readcursor.execute(qrystr, (name,))
         return self.readcursor.fetchone()[0] == 1
 
     def havedimension(self, dim):
@@ -378,48 +413,36 @@ class Database:
             self.conn.commit()
 
     def loaddimension(self, name):
-        # fetch all the places and portals in the dimension,
-        # then make the dimensio
-        qrystr = "select contained from containment where container=? "\
-                 "join place on name=contained;"
+        qrystr = "select name from place where dimension=?;"
         self.readcursor.execute(qrystr, (name,))
-        qrylst = [row[0] for row in self.readcursor.fetchall()]
-        places = self.getmanyplace(qrylst)
-        qrystr = "select contained from containment where container=? "\
-                 "join portal on name=contained;"
-        self.readcursor.execute(qrystr, (name,))
-        portals = self.getmanyportal(self.readcursor)
-        dimension = Dimension(name, places, portals)
-        self.dimdict[name] = dimension
-        return dimension
+        places = self.getmanyplace(untuple(self.readcursor.fetchall()))
+        portals = []  # could optimize by writing a function getportalsfrommanyplaces
+        for place in places:
+            portals += self.getportalsfrom(place)
+        dim = Dimension(name, places, portals)
 
     def loadmanydimension(self, names):
-        # This'll be easier if I create the Dimension objects
-        # first, and then assign them places and portals.
-        dimd = dict([(n, Dimension[n]) for n in names])
-        # get all the places in a dimension with name in names; with
-        # the name next to the place
-        querystr = "select container, contained from containment "\
-                   "where container in ("
-        questionmarks = ["?"] * len(names)
-        querystr += ", ".join(questionmarks) + ")"
-        querystr += " join place on name=contained;"
-        self.readcursor.execute(querystr, names)
-        # get the Place of the name given in the second column, and
-        # assign it to the dimension of the name given in the first
-        # column
-        for row in self.readcursor:
-            dimd[row[0]].places.append(self.getplace(row[1]))
-        # As above, for portals.
-        querystr = "select container, contained from containment "\
-                   "where container in ("
-        querystr += ", ".join(questionmarks) + ")"
-        querystr += " join portal on name=contained;"
-        self.readcursor.execute(querystr, names)
-        for row in self.readcursor:
-            dimd[row[0]].portals.append(self.getportal(row[1]))
-        self.dimdict.update(dimd)
-        return dimd.itervalues()
+        qm = ["?"] * len(names)
+        qrystr = "select dimension, name from place where dimension in (" +\
+                 ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, names)
+        rows = self.readcursor.fetchall()
+        places = {}
+        self.getmanyplaces([row[1] for row in rows])
+        for row in rows:
+            if row[0] not in places:
+                places[row[0]] = []
+            places[row[0]].append(self.placemap[row[1]])
+        portals = {}
+        for name in names:
+            # I could optimize by writing a function getportalsfrommany
+            portals[name] = self.getportalsfrom(name).values()
+        r = {}
+        for name in names:
+            dim = Dimension(name, places[name], portals[name])
+            r[name] = dim
+            self.dimmap[name] = dim
+        return r
 
     def getdimension(self, name):
         if name in self.dimdict:
@@ -485,66 +508,15 @@ class Database:
     def loadplace(self, name):
         if not self.knowplace(name):
             return None
-        qrystr = "select name from portal where from_place=?;"
-        self.readcursor.execute(qrystr, (name,))
-        portals = self.getmanyportal([row[0] for row in self.readcursor])
-        qrystr = "select contained from containment where container=?;"
-        self.readcursor.execute(qrystr, (name,))
-        contents = self.getmanything([row[0] for row in self.readcursor])
-        qrystr = "select attribute, value from attribute "\
-                 "where attributed_to=?;"
-        self.readcursor.execute(qrystr, (name,))
-        attributes = self.getmanyattribution([row[0] for row in
-                                              self.readcursor])
+        attributes = self.getattributionson(name)
+        contents = self.getcontents(name)
+        portals = self.getportalsfrom(name)
         p = Place(name, attributes, contents, portals)
         self.placedict[name] = p
         return p
 
     def loadmanyplace(self, names):
-        # portals
-        questionmarks = ["?"] * len(names)
-        qmstr = ", ".join(questionmarks)
-        querystr = "select name from portal where from_place in "\
-                   "(" + qmstr + ");"
-        self.readcursor.execute(querystr, names)
-        portrows = self.readcursor.fetchall()
-        for row in self.readcursor:
-            if row[0] in place2port:
-                place2port[row[0]].append(row[1])
-            else:
-                place2port[row[0]] = [row[1]]
-        # things. not bothering to check for thingness, containment is
-        # supposed to do that
-        querystr = "select contained from containment "\
-                   "where container in (" + qmstr + ");"
-        self.readcursor.execute(querystr, names)
-        thingrows = self.readcursor.fetchall()
-        # attributes
-        querystr = "select attributed_to, attribute, value from attribution "\
-                   "where attributed_to in (" + qmstr + ");"
-        self.readcursor.execute(querystr, names)
-        place2attr = {}
-        for row in self.readcursor:
-            if row[0] not in place2attr:
-                place2attr[row[0]] = {}
-            place2attr[row[0]][row[1]] = row[2]
-        # I have the name of every thing and portal in this place, but
-        # I want the Python objects of them.  Normally I'd call
-        # getmanything and then assign them en masse but in this case
-        # it would cause problems matching the thing to the place it's
-        # in. So I'll call getmanything and then look things up in the
-        # containment map.
-        portnames = untuple(portrows)
-        self.getmanyportal(portnames) # I need to write this method
-        thingnames = untuple(thingrows)
-        self.getmanything(thingnames)
-        r = []
-        for name in names:
-            p = Place(name, place2attr[name], self.getcontents(name),
-                      self.getportalsfrom(name))
-            self.placedict[name] = p
-            r.append(p)
-        return r
+        pass
 
     def getplace(self, name):
         # Remember that this returns the *loaded* version, if there is one.
@@ -1119,17 +1091,16 @@ class Database:
                              (str(val), attr))
 
     def writeattribution(self, attr, item, val, commit=defaultCommit):
-        qrystr = "select count(*) from attribution where attribute=? "\
-                 "and attributed_to=?;"
-        self.readcursor.execute(qrystr, (attr, item))
-        if self.readcursor.fetchone()[0] == 1:
-            self.updattribution(attr, item, val, commit)
+        if self.knowattribution(attr, item):
+            self.updattribution(item, attr, val, commit)
         else:
-            self.mkattribution(attr, item, val, commit)
+            self.updattribution(item, attr, val, commit)
 
     def writeattributionson(self, itemname, commit=defaultCommit):
-        for attrval in self.attrvaldict[itemname].iteritems():
-            self.writeattribution(attrval[0], itemname, attrval[1], commit)
+        for att in self.attributiondict[itemname].iteritems():
+            self.writeattribution(att[0], itemname, att[1], commit=False)
+        if commit:
+            self.conn.commit()
 
     def saveattributionson(self, item, commit=defaultCommit):
         self.writeattributionson(item.name, commit)
@@ -1226,11 +1197,11 @@ class Database:
         qrystr = "select attr, val from attribution where attributed_to=?;"
         self.readcursor.execute(qrystr, (item,))
         r = {}
-        if item not in self.attrvaldict:
-            self.attrvaldict[item] = {}
+        if item not in self.attributiondict:
+            self.attributiondict[item] = {}
         for row in self.readcursor:
             r[row[0]] = row[1]
-            self.attrvaldict[item][row[0]] = row[1]
+            self.attributiondict[item][row[0]] = row[1]
         return r
 
     def loadattributionsonmany(self, items):
@@ -1247,84 +1218,59 @@ class Database:
         return r
 
     def getattribution(self, attr, item):
-        if item in self.attrvaldict:
-            if self.attrvaldict[item].has_key[attr]:
-                return self.attrvaldict[item][attr]
+        if item in self.attributiondict:
+            if self.attributiondict[item].has_key[attr]:
+                return self.attributiondict[item][attr]
             else:
                 return self.loadattribution(attr, item)
         else:
             return self.loadattribution(attr, item)
 
     def getattributionson(self, item):
-        if item not in self.attrvaldict:
+        if item not in self.attributiondict:
             self.loadattributionson(item)
-        return self.attrvaldict[item]
+        return self.attributiondict[item]
 
     def getattributionsonmany(self, items):
-        loaded = items
         unloaded = []
-        i = 0
-        l = len(loaded)
-        while i < l:
-            if loaded[i] not in self.attrvaldict:
-                unloaded.append(loaded[i])
-                del loaded[i]
-            i += 1
-        a = {}
-        for item in loaded:
-            a[item] = self.attrvaldict[item]
-        a.update(self.loadattributionsonmany(items))
-        return a
+        for item in items:
+            if item not in self.attributiondict:
+                unloaded.append(item)
+        self.loadattributionsonmany(unloaded)
+        r = {}
+        for item in items:
+            if item not in r:
+                r[item] = {}
+            for att in self.attributiondict[item]:
+                if att not in r[item]:
+                    r[item][att] = self.attributiondict[item][att]
+        return r
 
-    def knowportal(self, orig_or_name, dest=None):
-        if dest is None:
-            qrystr = "select count(*) from portal where name=?;"
-            self.readcursor.execute(qrystr, (orig_or_name,))
-        else:
-            qrystr = "select count(*) from portal where "\
-                     "from_place=? and to_place=?;"
-            self.readcursor.execute(qrystr, (orig_or_name, dest))
+    def knowportal(self, name):
+        qrystr = "select count(*) from portal where name=? limit 1;"
+        self.readcursor.execute(qrystr, (name,))
         return self.readcursor.fetchone()[0] == 1
 
-    def knowanyportal(self, tups):
-        if len(tups[0]) == 1:
-            return self.knowany("portal", "(name)", tups)
-        else:
-            return self.knowany("portal", "(from_place, to_place)", tups)
+    def knowanyportal(self, names):
+        return self.knowany("portal", ("name"), names)
 
-    def knowallportal(self, tups):
-        if len(tups[0]) == 1:
-            return self.knowall("portal", "(name)", tups)
-        else:
-            return self.knowall("portal", "(from_place, to_place)", tups)
-
-    def haveportal(self, portal):
-        return self.knowportal(portal.name)
+    def knowallportal(self, names):
+        return self.knowall("portal", ("name"), names)
 
     def mkportal(self, name, orig, dest, commit=defaultCommit):
         qrystr = "insert into portal values (?, ?, ?);"
-        self.writecursor.execute(qrystr, (name, orig, dest))
+        qrytup = (name, orig, dest)
+        self.writecursor.execute(qrystr, qrytup)
         if commit:
             self.conn.commit()
 
-    def mkmanyportal(self, porttups, commit=defaultCommit):
-        pnames = [(tup[0],) for tup in porttups]
-        self.mkmany("item", pnames, commit=False)
-        better = []
-        for tup in porttups:
-            better.append(tup[0:3])
-            if tup[3]:
-                recip = ("portal[%s->%s]" % (tup[2], tup[1]), tup[2], tup[1])
-                better.append(recip)
-        self.mkmany("portal", better, commit=False)
-        if commit:
-            self.conn.commit()
+    def mkmanyportal(self, tups, commit=defaultCommit):
+        self.mkmany("portal", tups)
 
     def updportal(self, name, orig, dest, commit=defaultCommit):
         qrystr = "update portal set from_place=?, to_place=? where name=?;"
-        self.writecursor.execute(qrystr, (orig, dest, name))
-        if commit:
-            self.conn.commit()
+        qrytup = (orig, dest, name)
+        self.writecursor.execute(qrystr, qrytup)
 
     def writeportal(self, name, orig, dest, commit=defaultCommit):
         if self.knowportal(name):
@@ -1333,45 +1279,19 @@ class Database:
             self.mkportal(name, orig, dest, commit)
 
     def saveportal(self, port, commit=defaultCommit):
-        self.writeportal(port.name, port.orig, port.dest, commit)
-
-    def modportal(self, name, orig, dest):
-        port = self.portaldict[name]
-        if port.orig is not orig or port.dest is not dest:
-            port.orig = orig
-            port.dest = dest
-            self.altered.append(port)
-
-    def _connect(self, port):
-        "Internal use"
-        self.portaldict[port.name] = port
-        self.portalorigdestdict[port.orig][port.dest] = port
-        self.portaldestorigdict[port.dest][port.orig] = port
+        self.saveattson(port, commit=False)  # write it
+        self.writeportal(port.name, port.origin, port.destination, commit)
 
     def loadportal(self, name):
-        qrystr = "select from_place, to_place from portal where name=?"
+        qrystr = "select from_place, to_place from portal where name=?;"
         self.readcursor.execute(qrystr, (name,))
-        row = self.readcursor.fetchone()
-        if row is None:
-            return None
-        attdict = self.getattributionson(name)
-        port = Portal(name, row[0], row[1], attdict)
-        self._connect(port)
+        (orign, destn) = self.readcursor.fetchone()
+        orig = self.getplace(orign)
+        dest = self.getplace(destn)
+        atts = self.getattributionson(name)
+        port = Portal(name, orig, dest, atts)
+        self.portaldict[name] = port
         return port
-
-    def loadportalsfrom(self, orig):
-        qrystr = "select name, from_place, to_place "\
-                 "from portal where from_place=?"
-        self.readcursor.execute(qrystr, (orig,))
-        r = {}
-        for row in self.readcursor:
-            name = row[0]
-            dest = row[2]
-            attdict = self.getattributionson(name)
-            port = Portal(name, orig, dest, attdict)
-            r[name] = port
-            self._connect(port)
-        return r
 
     def getportal(self, name):
         if name in self.portaldict:
@@ -1379,22 +1299,99 @@ class Database:
         else:
             return self.loadportal(name)
 
-    def getportalsfrom(self, orig):
-        if orig in self.portalorigdestdict:
-            return self.portalorigdestdict[orig].values()
-        else:
-            return self.loadportalsfrom(orig)
+    def loadmanyportal(self, names):
+        qm = ["?"] * len(names)
+        qrystr = "select name, from_place, to_place from portal where name in (" +\
+                 ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, names)
+        rows = self.readcursor.fetchall()
+        places = [row[1] for row in rows] + [row[2] for row in rows]
+        self.getmanyplace(places)
+        self.getattributionsonmany([row[0] for row in rows])
+        r = {}
+        for row in rows:
+            port = Portal(row[0], self.placedict[row[1]], 
+                          self.placedict[row[2]], self.attributiondict[row[0]])
+            r[row[0]] = port
+            self._connect(port)
+        return r
 
-    def delportal(self, orig_or_name, dest=None, commit=defaultCommit):
-        if dest is None:
-            qrystr = "delete from portal where name=?"
-            self.writecursor.execute(qrystr, (orig_or_name,))
-            iname = orig_or_name
-        else:
-            qrystr = "delete from portal where from_place=? and to_place=?"
-            self.writecursor.execute(qrystr, (orig_or_name, dest))
-            iname = "portal[%s->%s]" % (orig_or_name, dest)
-        self.writecursor.execute("delete from item where name=?;", (iname,))
+    def getmanyportal(self, names):
+        unloaded = []
+        for name in names:
+            if name not in self.portaldict:
+                unloaded.append(name)
+        self.loadmanyportal(unloaded)
+        r = {}
+        for name in names:
+            r[name] = self.portaldict[name]
+        return r
+
+    def loadportalsfrom(self, orign):
+        qrystr = "select name, to_place from portal where from_place=?;"
+        self.readcursor.execute(qrystr, orign)
+        rows = self.readcursor.fetchall()
+        self.getattributionsonmany([row[0] for row in rows])
+        r = []
+        for row in rows:
+            port = Portal(row[0], orign, row[1], self.attributiondict[row[0]])
+            r.append(port)
+            self._connect(port)
+        return r
+
+    def loadportalsfrommany(self, origns):
+        qm = ["?"] * len(origins)
+        qrystr = "select name, from_place, to_place from portal " \
+                 "where from_place in (" + ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, origins)
+        rows = self.readcursor.fetchall()
+        self.getmanyplace([row[1] for row in rows] + [row[2] for row in rows])
+        self.getattributionsonmany([row[0] for row in rows])
+        r = {}
+        for row in rows:
+            port = Portal(row[0], self.placedict[row[1]],
+                          self.placedict[row[2]], self.attributiondict[row[3]])
+            r[row[0]] = port
+            self._connect(port)
+        return r
+
+    def _connect(self, port):
+        "Internal use"
+        self.portaldict[port.name] = port
+        self.portalorigdestdict[port.orig][port.dest] = port
+        self.portaldestorigdict[port.dest][port.orig] = port
+
+    def _dp(self, name):
+        "Internal use"
+        if name in self.portaldict:
+            p = self.portaldict[name]
+            del self.portalorigdestdict[p.orig][p.dest]
+            del self.portaldict[name]
+            del p
+
+    def delportal(self, name, commit=defaultCommit):
+        qrystr = "delete from portal where name=?;"
+        self._dp(name)
+        self.writecursor.execute(qrystr, (name,))
+        if commit:
+            self.conn.commit()
+
+    def delmanyportal(self, names, commit=defaultCommit):
+        qrystr = "delete from portal where name in "
+        qm = ["?"] * names
+        qrystr += "(" + ", ".join(qm) + ");"
+        for name in names:
+            self._dp(name)
+        self.writecursor.execute(qrystr, names)
+        if commit:
+            self.conn.commit()
+
+    def delportalsfrom(self, orig, commit=defaultCommit):
+        qrystr = "delete from portal where from_place=?;"
+        for p in self.portalorigdestdict[orig].valueiter():
+            del self.portaldict[p.name]
+        del self.portalorigdestdict[orig]
+        self.writecursor.execute(qrystr, (orig,))
         if commit:
             self.conn.commit()
 
@@ -1468,11 +1465,44 @@ class Database:
         self.spotdict[boardn][placen] = spot
         return spot
 
+    def loadmanyspot(self, placeboards):
+        qrystr = valuesget("spot", ("place", "board"), ("x", "y", "r"),
+                           len(placeboards))
+        self.readcursor.execute(qrystr, placeboards)
+        r = {}
+        for row in self.readcursor:
+            (place, board, x, y, r) = row
+            spot = Spot(*row)
+            if board not in r:
+                r[board] = {}
+            r[board][place] = spot
+            self.spotdict[board][place] = spot
+        return r
+
     def getspot(self, placen, boardn):
         if boardn in self.spotdict and placen in self.spotdict[boardn]:
             return self.spotdict[boardn][placen]
         else:
             return self.loadspot(placen, boardn)
+
+    def getmanyspot(self, placeboards):
+        loaded = []
+        unloaded = []
+        for placeboard in placeboards:
+            (place, board) = placeboard
+            if board in self.spotdict and place in self.spotdict[board]:
+                loaded.append(placeboard)
+            else:
+                unloaded.append(placeboard)
+        r = {}
+        for placeboard in loaded:
+            (place, board) = placeboard
+            spot = self.spotdict[board][place]
+            if board not in r:
+                r[board] = {}
+            r[board][place] = spot
+        r.update(self.loadmanyspot(unloaded))
+        return r
 
     def delspot(self, place, commit=defaultCommit):
         self.writecursor.execute("delete from spot where place=?;", (place,))
@@ -1508,9 +1538,6 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def syncimg(self, img):
-        self.sync('img', img)
-
     def writeimg(self, name, path, rl=False, commit=defaultCommit):
         if self.knowimg(name):
             self.updimg(name, path, rl, commit)
@@ -1545,11 +1572,37 @@ class Database:
         else:
             return self.loadimgfile(name, row[1])
 
+    def loadmanyimg(self, names):
+        qrystr = valuesget("img", ("name"), ("path", "rltile"), len(names))
+        self.readcursor.execute(qrystr, names)
+        r = {}
+        for row in self.readcursor:
+            name = row[0]
+            if row[2]:
+                r[name] = self.loadrltile(name, row[1])
+            else:
+                r[name] = self.loadimgfile(name, row[1])
+        return r
+
     def getimg(self, name):
         if name in self.imgdict:
             return self.imgdict[name]
         else:
             return self.loadimg(name)
+
+    def getmanyimg(self, names):
+        loaded = []
+        unloaded = []
+        for name in names:
+            if name in self.imgdict:
+                loaded.append(name)
+            else:
+                unloaded.append(name)
+        r = {}
+        for name in loaded:
+            r[name] = self.imgdict[name]
+        r.update(self.loadmanyimg(names))
+        return r
 
     def delimg(self, name, commit=defaultCommit):
         if name in self.imgdict:
@@ -1558,13 +1611,12 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def cullimgs(self, commit=defaultCommit):
+    def cullimgs(self, keeps, commit=defaultCommit):
         keeps = self.imgdict.keys()
-        left = "delete from img where name not in ("
-        middle = "?, " * (len(keeps) - 1)
-        right = "?);"
-        querystr = left + middle + right
-        self.writecursor.execute(querystr, keeps)
+        qm = ["?"] * len(keeps)
+        qrystr = "delete from img where name not in ("
+        qrystr += ", ".join(qm) + ");"
+        self.writecursor.execute(qrystr, keeps)
         if commit:
             self.conn.commit()
 
@@ -1603,9 +1655,6 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def syncmenuitem(self, mi):
-        self.sync('menuitem', mi)
-
     def writemenuitem(self, menu, i, text, onclick, closer=True,
                       commit=defaultCommit):
         if self.knowmenuitem(menu, i):
@@ -1617,9 +1666,28 @@ class Database:
         qrystr = "select text, onclick, closer from menuitem "\
                  "where menu=? and idx=?;"
         self.readcursor.execute(qrystr, (menuname, idx))
-        row = self.readcursor.fetchone()
-        self.menuitemdict[menuname][idx] = row
-        return row
+        (text, onclick, closer) = self.readcursor.fetchone()
+        menuitem = MenuItem(menuname, idx, text, onclick, closer)
+        if menuname not in self.menuitemdict:
+            self.menuitemdict[menuname] = {}
+        self.menuitemdict[menuname][idx] = menuitem
+        return menuitem
+
+    def loadmanymenuitem(self, nameidx):
+        qrystr = valuesget("menuitem", ("menu", "idx"),
+                           ("text", "onclick", "closer"), len(nameidx))
+        self.readcursor.execute(qrystr, nameidx)
+        r = {}
+        for row in self.readcursor:
+            (menu, idx, text, onclick, closer) = row
+            mi = MenuItem(*row)
+            if menu not in r:
+                r[menu] = {}
+            if menu not in self.menuitemdict:
+                self.menuitemdict[menu] = {}
+            r[menu][idx] = mi
+            self.menuitemdict[menu][idx] = mi
+        return r
 
     def getmenuitem(self, menuname, idx):
         if menuname in self.menuitemdict:
@@ -1630,6 +1698,24 @@ class Database:
         else:
             return self.loadmenuitem(menuname, idx)
 
+    def getmanymenuitem(self, menuidx):
+        loaded = []
+        unloaded = []
+        for item in menuidx:
+            (menu, idx) = item
+            if menu in self.menuitemdict and idx in self.menuitemdict[menu]:
+                loaded.append(item)
+            else:
+                unloaded.append(item)
+        r = {}
+        for item in loaded:
+            (menu, idx) = item
+            if menu not in r:
+                r[menu] = {}
+            r[menu][idx] = self.menuitemdict[menu][idx]
+        r.update(self.loadmanymenuitem(unloaded))
+        return r
+
     def delmenuitem(self, menuname, i, commit=defaultCommit):
         qrystr = "delete from menuitem where menu=? and index=?;"
         if menuname in self.menuitemdict:
@@ -1638,6 +1724,136 @@ class Database:
         self.writecursor.execute(qrystr, (menuname, i))
         if commit:
             self.conn.commit()
+
+    def knowmap(self, name):
+        qrystr = "select count(*) from map where name=? limit 1;"
+        qrytup = (name,)
+        self.readcursor.execute(qrystr, qrytup)
+        return self.readcursor.fetchone()[0] == 1
+
+    def havemap(self, mp):
+        return self.knowmap(mp.name)
+
+    def mkmap(self, name, dimension, commit=defaultCommit):
+        qrystr = "insert into map values (?, ?);"
+        qrytup = (name, dimension)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def mkmanymap(self, maptups, commit=defaultCommit):
+        self.mkmany("map", maptups, commit)
+
+    def updmap(self, name, dimension, commit=defaultCommit):
+        qrystr = "update map set dimension=? where name=?;"
+        qrytup = (dimension, name)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def updmanymap(self, tups, commit=defaultCommit):
+        for tup in tups:
+            self.updmap(tup[0], tup[1], commit)
+
+    def writemap(self, name, dimension, commit=defaultCommit):
+        if self.knowmap(name):
+            self.updmap(name, dimension, commit)
+        else:
+            self.mkmap(name, dimension, commit)
+
+    def writemanymap(self, tups, commit=defaultCommit):
+        for tup in tups:
+            self.writemap(tup[0], tup[1], commit)
+
+    def savemap(self, mp):
+        self.savemanyplace(mp.places)
+        self.savemanyportal(mp.portals)
+        self.writemap(mp.name, mp.dimension)
+
+    def loadmap(self, name):
+        qrystr = "select dimension from map where name=?;"
+        qrytup = (name,)
+        self.readcursor.execute(qrystr, qrytup)
+        dim = self.readcursor.fetchone()[0]
+        qrystr = "select place from mappedness where map=?;"
+        self.readcursor.execute(qrystr, qrytup)
+        placerows = self.readcursor.fetchall()
+        places = self.getmanyplace(untuple(placerows))
+        qm = ["?"] * len(places)
+        qrystr = "select name from portal where dimension=? " +\
+                 "and from_place in (" + ", ".join(qm) + ");"
+        qrylst = [dim] + places
+        self.readcursor.execute(qrystr, qrylst)
+        portalrows = self.readcursor.fetchall()
+        portals = self.getmanyportal(untuple(portalrows))
+        mp = Map(name, self.getdimension(dim),
+                 places, portals)
+        self.mapdict[name] = mp
+        return mp
+
+    def loadmanymap(self, names):
+        qrystr = valuesget("map", ("name",), ("dimension",), len(names))
+        self.readcursor.execute(qrystr, names)
+        rows = self.readcursor.fetchall()
+        dims = [row[1] for row in rows]
+        dimdict = self.getmanydimension(dims)
+        mapdimdict = {}
+        for row in rows:
+            mapdimdict[row[0]] = dimdict[row[1]]
+        qm = ["?"] * len(names)
+        qrystr = "select map, place from mappedness where map in (" +\
+                 ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, names)
+        rows = self.readcursor.fetchall()
+        placenames = [row[1] for row in rows]
+        placedict = self.getmanyplace(placenames)
+        mapplacedict = {}
+        for row in rows:
+            (mapn, placen) = row
+            if mapn not in placedict:
+                mapplacedict[mapn] = []
+            mapplacedict[mapn].append(placedict[placen])
+        qm = ["?"] * len(placedict)
+        qrystr = "select map.name, portal.name from map join portal on " \
+                 "map.dimension=portal.dimension and portal.from_place in (" +\
+                 ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, placenames)
+        rows = self.readcursor.fetchall()
+        portnames = [row[1] for row in rows]
+        portdict = self.getmanyportal(portnames)
+        mapportaldict = {}
+        for row in rows:
+            (mapn, portn) = row
+            if mapn not in mapportaldict:
+                mapportaldict[mapn] = []
+            mapportaldict[mapn].append(portdict[portn])
+        mpdict = {}
+        for name in names:
+            mp = Map(name, mapdimdict[name], mapplacedict[name],
+                     mapportaldict[name])
+            mpdict[name] = name
+            self.mapdict[name] = mp
+        return mpdict
+
+    def getmap(self, name):
+        if name in self.mapdict:
+            return self.mapdict[name]
+        else:
+            return self.loadmap(name)
+
+    def getmanymap(self, names):
+        loaded = []
+        unloaded = []
+        for name in names:
+            if name in self.mapdict:
+                loaded.append(name)
+            else:
+                unloaded.append(name)
+        r = {}
+        for name in loaded:
+            r[name] = self.mapdict[name]
+        r.update(self.loadmany(unloaded))
+        return r
 
     def knowboard(self, name, w, h, wallpaper):
         qrystr = "select count(*) from board where name=?;"
@@ -1663,29 +1879,55 @@ class Database:
         if commit:
             self.conn.commit()
 
-    def syncboard(self, board):
-        self.sync('board', board)
-
     def writeboard(self, name, w, h, wallpaper, commit=defaultCommit):
         if self.knowboard(name):
             self.updboard(name, w, h, wallpaper, commit)
         else:
             self.mkboard(name, w, h, wallpaper, commit)
 
-    def loadboard(self, name):
-        qrystr = "select width, height, wallpaper from board where name=?;"
-        self.readcursor.execute(qrystr, (name,))
+    def loadboard(self, mapname):
+        qrystr = "select map, width, height, wallpaper "\
+                 "from board where name=?;"
+        self.readcursor.execute(qrystr, (mapname,))
         tup = self.readcursor.fetchone()
-        wall = self.getimg(tup[2])
-        board = Board(tup[0], tup[1], wall)
-        self.boarddict[name] = board
+        pm = self.getplacemap(tup[0])
+        wall = self.getimg(tup[3])
+        board = Board(pm, tup[1], tup[2], wall)
+        self.boarddict[mapname] = board
         return board
+
+    def loadmanyboard(self, names):
+        qrystr = valuesget("board", ("map"), ("width", "height", "wallpaper"),
+                           len(names))
+        self.readcursor.execute(qrystr, names)
+        r = {}
+        for row in self.readcursor:
+            placemap = self.getplacemap(row[0])
+            wallpape = self.getimg(row[3])
+            board = Board(placemap, row[1], row[2], wallpape)
+            r[row[0]] = board
+            self.boarddict[row[0]] = board
+        return r
 
     def getboard(self, name):
         if name in self.boarddict:
             return self.boarddict[name]
         else:
             return self.loadboard(name)
+
+    def getmanyboard(self, names):
+        loaded = []
+        unloaded = []
+        for name in names:
+            if name in self.boarddict:
+                loaded.append(name)
+            else:
+                unloaded.append(name)
+        r = {}
+        for name in loaded:
+            r[name] = self.boarddict[name]
+        r.update(self.loadmanyboard(unloaded))
+        return r
 
     def delboard(self, name, commit=defaultCommit):
         if name in self.boarddict:
@@ -1728,6 +1970,12 @@ class Database:
         else:
             self.mkpawn(item, board, img, x, y, spot, commit)
 
+    def _lp(self, pawn):
+        "Internal use"
+        if not pawn.thing.name in self.pawndict:
+            self.pawndict[pawn.thing.name] = {}
+        self.pawndict[pawn.thing.name][pawn.board.name] = pawn
+
     def loadpawn(self, thingn, boardn):
         qrystr = "select thing, board, img, x, y, spot from pawn "\
                  "where thing=? and board=?;"
@@ -1738,8 +1986,27 @@ class Database:
         pawnlst[2] = self.getimg(pawnlst[2])
         pawnlst[5] = self.getspot(pawnlst[5])
         pawn = Pawn(*pawnlst)
-        self.pawndict[boardn][thingn] = pawn
+        self._lp(pawn)
         return pawn
+
+    def loadmanypawn(self, thingboards):
+        qrystr = valuesget("pawn", ("thing", "board"),
+                           ("img", "x", "y", "spot"), len(thingboards))
+        self.readcursor.execute(qrystr, thingboards)
+        rows = self.readcursor.fetchall()
+        things = self.getmanything([row[0] for row in rows])
+        boards = self.getmanyboard([row[1] for row in rows])
+        imgs = self.getmanyimg([row[2] for row in rows])
+        spots = self.getmanyspot([row[5] for row in rows])
+        pawns = [Pawn(things[row[0]], boards[row[1]], imgs[row[2]],
+                      row[3], row[4], spots[row[5]]) for row in rows]
+        r = {}
+        for pawn in pawns:
+            if pawn.thing.name not in r:
+                r[pawn.thing.name] = {}
+            r[pawn.thing.name][pawn.board.name] = pawn
+            self._lp(pawn)
+        return r
 
     def getpawn(self, itemn, boardn):
         if boardn in self.pawndict and itemn in self.pawndict[boardn]:
@@ -1777,22 +2044,77 @@ class Database:
     def haveroute(self, pawn):
         return self.knowroute(pawn.thing.name)
 
+    def _route(self, thingn, destn, route):
+        "Internal use"
+        if thingn not in self.routedict:
+            self.routedict[thingn] = {}
+        self.routedict[thingn][destn] = route
+
     def loadroute(self, thingn, destn):
         qrystr = "select ord, progress, portal from step where thing=?"\
                  " and destination=?;"
         self.readcursor.execute(qrystr, (thingn, destn))
-        steps = self.readcursor.fetchall()
+        rows = self.readcursor.fetchall()
         thing = self.getthing(thingn)
         dest = self.getplace(destn)
+        steps = self.getmanyportal([row[2] for row in rows])
         route = Route(steps, thing, dest)
-        self.routedict[thingn][destn] = route
+        self._route(thingn, destn, route)
         return route
+
+    def loadmanyroute(self, tups):
+        qm = ["(?, ?)"] * len(tups)
+        qrystr = "select thing, destination, ord, progress, portal from step "\
+                 "where (thing, destination) in (" + ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, untuple(tups))
+        rows = self.readcursor.fetchall()
+        routesteps = {}
+        routes = {}
+        things = self.getmanything([row[0] for row in rows])
+        dests = self.getmanyplace([row[1] for row in rows])
+        ports = self.getmanyportal([row[4] for row in rows])
+        for row in rows:
+            port = ports[row[5]]
+            idx = row[2]
+            if row[0] not in routesteps:
+                routesteps[row[0]] = {}
+            if row[1] not in routesteps[row[0]]:
+                routesteps[row[1]] = []
+            while len(routesteps[row[0]][row[1]]) < idx:
+                routesteps[row[0]][row[1]].append(None)
+            routesteps[row[0]][row[1]][idx] = port
+        for tup in tups:
+            (thingn, destn) = tup
+            steps = routesteps[thingn][destn]
+            thing = things[thingn]
+            dest = dests[destn]
+            route = Route(thing, dest, steps)
+            if thingn not in routes:
+                routes[thingn] = {}
+            routes[thingn][destn] = route
+            self._route(thingn, destn, route)
+        return routes
 
     def getroute(self, thingn, destn):
         if thingn in self.routedict and destn in self.routedict[thingn]:
             return self.routedict[thingn][destn]
         else:
             return self.loadroute(thingn)
+
+    def getmanyroute(self, tups):
+        unloaded = []
+        for tup in tups:
+            if tup[0] not in self.routedict or
+            tup[1] not in self.routedict[tup[0]]:
+                unloaded.append(tup)
+        self.loadmanyroute(unloaded)
+        r = {}
+        for tup in tups:
+            (thing, dest) = tup
+            if thing not in r:
+                r[thing] = {}
+            r[thing][dest] = self.routedict[thing][dest]
+        return r
 
     def delroute(self, thingn, destn, commit=defaultCommit):
         qrystr = "delete from step where thing=? and destination=?;"
@@ -1844,11 +2166,33 @@ class Database:
         self.colordict[name] = color
         return color
 
+    def loadmanycolor(self, names):
+        qm = ["?"] * len(names)
+        qrystr = "select name, red, green, blue from color "\
+                 "where name in (" + qm + ");"
+        self.readcursor.execute(names)
+        r = {}
+        for row in self.readcursor:
+            col = Color(*row)
+            r[row[0]] = col
+            self.colordict[row[0]] = col
+        return r
+
     def getcolor(self, name):
         if name in self.colordict:
             return self.colordict[name]
         else:
             return self.loadcolor(name)
+
+    def getmanycolor(self, names):
+        unloaded = []
+        for name in names:
+            if name not in self.colordict:
+                unloaded.append(name)
+        self.loadmanycolor(unloaded)
+        r = {}
+        for name in names:
+            r[name] = self.colordict[name]
 
     def delcolor(self, name, commit=defaultCommit):
         if name in self.colordict:
@@ -1920,11 +2264,41 @@ class Database:
         self.styledict[name] = sty
         return sty
 
+    def loadmanystyle(self, names):
+        qm = ["?"] * len(names)
+        qrystr = "select name, fontface, fontsize, spacing, "\
+                 "bg_inactive, bg_active, fg_inactive, fg_active "\
+                 "from style where name in (" + ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, names)
+        rows = self.readcursor.fetchall()
+        colors = untuple([row[4:] for row in rows])
+        self.loadmanycolor(colors)
+        r = {}
+        for row in rows:
+            (name, ff, fs, s, bg_i, bg_a, fg_i, fg_a) = row
+            sty = Style(name, ff, fs, s, self.getcolor(bg_i),
+                        self.getcolor(bg_a), self.getcolor(fg_i),
+                        self.getcolor(fg_a))
+            r[name] = sty
+            self.styledict[name] = sty
+        return r
+
     def getstyle(self, name):
         if name in self.styledict:
             return self.styledict[name]
         else:
             return self.loadstyle(name)
+
+    def getmanystyle(self, names):
+        unloaded = []
+        for name in names:
+            if name not in self.styledict:
+                unloaded.append(name)
+        self.loadmanystyle(unloaded)
+        r = {}
+        for name in names:
+            r[name] = self.stylemap[name]
+        return r
 
     def delstyle(self, name):
         qrystr = "delete from style where name=?;"
@@ -1991,15 +2365,46 @@ class Database:
         if not self.knowmenu(name):
             raise ValueError("Menu does not exist: %s" % name)
         self.readcursor.execute(qrystr, (name,))
-        menu = Menu(*self.readcursor.fetchone())
+        row = list(self.readcursor.fetchone())
+        row[5] = self.getstyle(row[5])
+        menu = Menu(*row)
         self.menudict[name] = menu
         return menu
+
+    def loadmanymenu(self, names):
+        qm = ["?"] * len(names)
+        qrystr = "select name, x, y, width, height, style, visible "\
+                 "from menu where name in (" +\
+                 ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, names)
+        rows = self.readcursor.fetchall()
+        styles = [row[5] for row in rows]
+        self.loadmanystyle(styles)
+        r = {}
+        for row in rows:
+            (name, x, y, width, height, style, visible) = row
+            style = self.getstyle(style)
+            menu = Menu(name, x, y, width, height, style, visible)
+            r[name] = menu
+            self.menudict[name] = menu
+        return r
 
     def getmenu(self, name):
         if name in self.menudict:
             return self.menudict[name]
         else:
             return self.loadmenu(name)
+
+    def getmanymenu(self, names):
+        unloaded = []
+        for name in names:
+            if name not in self.menudict:
+                unloaded.append(name)
+        self.loadmanymenu(unloaded)
+        r = {}
+        for name in names:
+            r[name] = self.menudict[name]
+        return r
 
     def delmenu(self, name, commit=defaultCommit):
         if name in self.menudict:
