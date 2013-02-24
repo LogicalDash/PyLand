@@ -2,10 +2,10 @@ from attrcheck import AttrCheck
 
 
 class Thing:
-    def __init__(self, name, loc={}, atts={}, cont=[]):
+    def __init__(self, dimension, name, loc, cont=[]):
+        self.dimension = dimension
         self.name = name
         self.loc = loc
-        self.att = atts
         self.cont = cont
         self.permissions = []
         self.forbiddions = []

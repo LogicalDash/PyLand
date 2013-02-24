@@ -1,64 +1,101 @@
 import igraph
 
 
-class Step:
-    def __init__(self, thing, portal):
-        self.thing = thing
-        self.portal = portal
+class Journey:
+    """Series of steps taken by a Thing to get to a Place.
 
+    Journey(traveller, destination, steps) => journey
 
-class Route:
+    Journey is the class for keeping track of a path that a traveller
+    wants to take across one of the game maps. It is stateful: it
+    tracks where the traveller is, and how far it's gotten along the
+    edge through which it's travelling. Each step of the journey is a
+    portal in the steps supplied on creation. The list should consist
+    of Portals in the precise order that they are to be travelled
+    through.
+
+    Each Journey has a progress attribute. It is a float, at least 0.0
+    and less than 1.0. When the traveller moves some distance along
+    the current Portal, call move(prop), where prop is a float, of the
+    same kind as progress, representing the proportion of the length
+    of the Portal that the traveller has travelled. progress will be
+    updated, and if it meets or exceeds 1.0, the current Portal will
+    become the previous Portal, and the next Portal will become the
+    current Portal. progress will then be decremented by 1.0.
+
+    You probably shouldn't move the traveller through more than 1.0 of
+    a Portal at a time, but Journey handles that case anyhow.
+
+    """
+
     def __init__(self, thing, dest, steplist):
         self.steplist = steplist
-        self.prevsteps = []
+        self.curstep = 0
         self.thing = thing
         self.dest = dest
-        self.steplist.sort()
+        self.progress = 0.0
 
-    def getstep(self, i):
-        return self.steplist[i]
+    def steps(self):
+        """Get the number of steps in the Journey.
 
-    def curstep(self):
-        return self.getstep(0)
+        steps() => int
 
-    def curprog(self):
-        return self.curstep()[1]
-
-    def curport(self):
-        return self.curstep()[2]
-
-    def prevstep(self):
-        return self.prevsteps[-1]
-
-    def move(self, prop, stepped=[]):
-        """Call this with a float argument to progress the specified
-        amount toward the next step. If that makes the current
-        progress go to 1.0 or above, I'll move the thing to the new
-        place. I will return a list of steps completed with this
-        call--plus the step presently in progress on the very end.
+        Returns the number of Portals the traveller ever passed
+        through or ever will on this Journey.
 
         """
-        (i, prog, port) = self.curstep()
-        newprog = prog + prop
-        if newprog >= 1.0:
-            newstep = self.curstep()
-            del self.steplist[0]
-            self.prevsteps.append(newstep)
-            stepped.append(newstep)
-            newprog -= 1.0
-            return self.move(nuprog, stepped)
-        elif newprog < 0.0:
-            newstep = self.prevsteps[-1]
-            del self.prevsteps[-1]
-            newprog += 1.0
-            newstep[1] = newprog
-            self.steplist.insert(0, newstep)
-            stepped.append(newstep)
-            return self.move(newprog, stepped)
+        return len(self.steplist)
+
+    def stepsleft(self):
+        """Get the number of steps remaining until the end of the Journey.
+
+        stepsleft() => int
+
+        Returns the number of Portals left to be travelled through,
+        including the one the traveller is in right now.
+
+        """
+        return len(self.steplist) - self.curstep
+
+    def getstep(self, i):
+        """Get the ith next Portal in the journey.
+
+        getstep(i) => Portal
+
+        getstep(0) returns the portal the traveller is presently
+        travelling through. getstep(1) returns the one it wil travel
+        through after that, etc. getstep(-1) returns the step before
+        this one, getstep(-2) the one before that, etc.
+
+        If i is out of range, returns None.
+
+        """
+        if i >= 0 and i < len(self.steplist):
+            return self.steplist[i+self.curstep]
         else:
-            stepped.append((i, newprog, port))
-            self.steplist[0] = (i, newprog, port)
-            return stepped
+            return None
+
+    def move(self, prop):
+        """Move the specified amount through the current portal.
+
+        move(prop) => Portal
+
+        Increments the current progress, and then adjusts the next and
+        previous portals as needed.  Returns the Portal the traveller
+        is now travelling through. prop may be negative.
+
+        If the traveller moves past the end (or start) of the path,
+        returns None.
+
+        """
+        self.progress += prop
+        while self.progress >= 1.0:
+            self.curstep += 1
+            self.progress -= 1.0
+        while self.progress < 0.0:
+            self.curstep -= 1
+            self.progress += 1.0
+        return self.getstep(0)
 
 
 class Portal:
@@ -79,13 +116,10 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
-    def __init__(self, name, origin, destination, attributes={},
-                 avatar=None, weight=0):
+    def __init__(self, name, origin, destination, attributes={}):
         if origin.dimension is not destination.dimension:
             raise Exception("No interdimensional portals")
         self.name = name
-        self.weight = weight
-        self.avatar = avatar
         self.dest = destination
         self.orig = origin
         self.att = attributes
@@ -100,7 +134,7 @@ class Portal:
         return self.weight
 
     def get_avatar(self):
-        return avatar
+        return self.avatar
 
     def is_passable_now(self):
         return True
@@ -128,12 +162,11 @@ class Portal:
 
 
 class Place:
-    def __init__(self, name, atts=[], contents=[], portals=[], entrytests=[]):
+    def __init__(self, dimension, name, contents=[], portals=[]):
         self.name = name
-        self.att = dict(atts)
+        self.dimension = dimension
         self.contents = contents
         self.portals = portals
-        self.entrytests = []
 
     def addthing(self, item):
         for test in self.entrytests:
@@ -163,6 +196,7 @@ class GenericGraph:
         self.name = name
         self.places = places
         self.portals = portals
+        self.igg = None
 
     def add_place(self, place):
         self.places.append(place)
@@ -195,9 +229,11 @@ class GenericGraph:
         return r
 
     def get_igraph_graph(self):
-        return igraph.Graph(edges=self.get_edges(), directed=True,
-                            vertex_attrs=self.get_vertex_atts(),
-                            edge_attrs=self.get_edge_atts())
+        if self.igg is None:
+            self.igg =  igraph.Graph(edges=self.get_edges(), directed=True,
+                                     vertex_attrs=self.get_vertex_atts(),
+                                     edge_attrs=self.get_edge_atts())
+        return self.igg
 
 
 class Dimension(GenericGraph):

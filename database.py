@@ -7,76 +7,10 @@ from attrcheck import LowerBoundCheck, UpperBoundCheck, \
     TypeCheck, ListCheck, AttrCheck
 from graph import Dimension, Map, Route
 from pyglet.resource import image
-from pyglet.image import Texture, TextureRegion
-
-tabs = ["""create table item (name text primary key);""",
-        """create table dimension (name text primary key);""",
-        """create table place (name text primary key, dimension text, foreign
-key(name) references item(name), foreign key(dimension) references
-dimension(name));""",
-        """create table thing (name text primary key, foreign
-key(name) references item(name));""",
-        """create table portal (name text primary key, map
-text, from_place text, to_place text, foreign key(name) references
-item(name), foreign key(dimension) references dimension(name), foreign
-key(map) references map(name), foreign key(from_place) references
-place(name), foreign key(to_place) references place(name),
-check(from_place<>to_place));""",
-        """create table map (name text primary key, dimension text, foreign
-key(dimension) references dimension(name));""",
-        """create table mappedness (place text, map text, foreign key(place)
-references place(name), foreign key(map) references map(name));""",
-        """create table containment (dimension text, contained text, container
-text, foreign key(dimension) references dimension(name), foreign
-key(contained) references item(name), foreign key(container)
-references item(name), check(contained<>container), primary
-key(dimension, contained));""",
-        """create table attribute (name text primary key, type text, lower,
-upper);""",
-        """create table attribution (attribute, attributed_to, value, foreign
-key(attribute) references permitted_values(attribute), foreign
-key(attributed_to) references item(name), foreign key(value)
-references permitted_values(value), primary key(attribute,
-attributed_to));""",
-        """create table permitted (attribute, value, foreign key(attribute)
-references attribute(name), primary key(attribute, value));""",
-        """create table img (name text primary key, path, rltile);""",
-        """create table board (map text primary key, width integer, height
-integer, wallpaper, foreign key(map) references map(name), foreign
-key(wallpaper) references image(name));""",
-        """create table spot (place text, board text, x integer, y integer, r
-integer, foreign key(place) references place(name), foreign key(board)
-references board(name), primary key(place, board));""",
-        """create table pawn (thing text, board text, img text, spot text,
-foreign key(img) references img(name), foreign key(thing) references
-thing(name), foreign key(spot) references spot(place), primary
-key(thing, board));""",
-        """create table color (name text primary key, red integer not null
-check(red between 0 and 255), green integer not null check(green
-between 0 and 255), blue integer not null check(blue between 0 and
-255));""",
-        """create table style (name text primary key, fontface text not null,
-fontsize integer not null, spacing integer, bg_inactive, bg_active,
-fg_inactive, fg_active, foreign key(bg_inactive) references
-color(name), foreign key(bg_active) references color(name), foreign
-key(fg_inactive) references color(name), foreign key(fg_active)
-references color(name));""",
-        """create table menu (name text primary key, x float not null, y float
-not null, width float not null, height float not null, style text
-default 'Default', visible boolean default 0, foreign key(style)
-references style(name));""",
-        """create table menuitem (menu text, idx integer, text text, onclick
-text, closer boolean, foreign key(menu) references menu(name), primary
-key(menu, idx));""",
-        """create table step (map text, thing text, ord integer, destination
-text, progress float, portal text, foreign key(map) references
-map(name), foreign key(thing) references thing(name), foreign
-key(portal) references portal(name), foreign key(destination)
-references place(name), check(progress>=0.0), check(progress<1.0),
-primary key(map, thing, ord, destination));"""]
+from parms import tabs
 
 defaultCommit = True
-testDB = False
+testDB = True
 
 
 def untuple(tuplist):
@@ -112,31 +46,11 @@ def valuesknow(tab, keyexp, x, y):
 
 
 def valuesget(tab, keynames, valnames, y):
-    # this is really ugly
-    sl = ["select", " "]
-    for keyname in keynames:
-        sl.append(keyname)
-        sl.append(", ")
-    for valname in valnames:
-        sl.append(valname)
-        sl.append(", ")
-    sl[-1] = " "
-    sl += ["from", " ", tab, " ", "where", " ", "("]
-    for keyname in keynames:
-        sl.append(keyname)
-        sl.append(", ")
-    sl[-1] = ")"
-    sl += [" ", "in", " "]
-    val = ["("]
-    for i in xrange(0, len(keynames)):
-        val += ["?", ", "]
-    val[-1] = ")"
-    vallst = ["("]
-    for i in xrange(0, y):
-        vallst += val
-        vallst.append(", ")
-    vallst[-1] = ")"
-    return "".join(sl + vallst) + ";"
+    qm_in = ["?"] * len(keynames)
+    qm_mid = "(" + ", ".join(qm_in) + ")"
+    qm_out = [qm_mid] * y
+    return "select " + ", ".join(keynames+valnames) + " from " + tab +\
+        " where (" + ", ".join(keynames) + ") in (" + ", ".join(qm_out) + ");"
 
 
 def haskeytup(dic, tup):
@@ -268,6 +182,43 @@ class Database:
         self.conn.commit()
         self.conn.close()
 
+    def _remember_place(self, place):
+        if place.dimension not in self.placedict:
+            self.placedict[place.dimension] = {}
+        self.placedict[place.dimension][place.name] = place
+
+    def _remember_thing(self, thing):
+        if thing.dimension not in self.thingdict:
+            self.thingdict[thing.dimensios] = {}
+        self.thingdict[thing.dimension][thing.name] = thing
+
+    def _remember_portal(self, port):
+        pd = self.portaldict
+        podd = self.portalorigdestdict
+        pdod = self.portaldestorigdict
+        dictlist = [pd, podd, pdod]
+        for d in dictlist:
+            if port.dimension not in d:
+                d[port.dimension] = {}
+        pd[port.dimension][port.name] = port
+        podd[port.dimension][port.orig.name] = port.dest.name
+        pdod[port.dimension][port.dest.name] = port.orig.name
+
+    def _forget_portal(self, port):
+        pd = self.portaldict
+        podd = self.portalorigdestdict
+        pdod = self.portaldestorigdict
+        dim = port.dimension
+        name = port.name
+        orig = port.orig.name
+        dest = port.dest.name
+        if dim in pd and name in pd[dim]:
+            del pd[dim][name]
+        if dim in podd and orig in podd[dim]:
+            del podd[dim][orig]
+        if dim in pdod and dest in podd[dim]:
+            del podd[dim][dest]
+
     def mkschema(self):
         for tab in tabs:
             self.writecursor.execute(tab)
@@ -334,7 +285,7 @@ class Database:
             return False
 
     def alter(self, obj):
-        "Pass an object here to have the database remember it, both in the"
+        "Pass an object here to have the database remember it, both in the "
         "short term and eventually on the disk."
         if isinstance(obj, Dimension):
             self.dimdict[obj.name] = obj
@@ -386,7 +337,7 @@ class Database:
                 saver = self.manysaver[clas]
                 saver(clasobjs, commit=False)
             if len(altered) > 0:
-                raise Exception("While syncing, found some altered objects "\
+                raise Exception("While syncing, found some altered objects "
                                 "that I don't know how to save.")
                 self.conn.rollback()
             else:
@@ -401,66 +352,15 @@ class Database:
         return self.knowdimension(dim.name)
 
     def mkdimension(self, name, commit=defaultCommit):
-        self.writecursor.execute("insert into item values (?);", (name,))
         self.writecursor.execute("insert into dimension values (?);", (name,))
         if commit:
             self.conn.commit()
 
-    def mkmanydimension(self, tups, commit=defaultCommit):
-        self.mkmany("item", tups, commit=False)
-        self.mkmany("dimension", tups, commit=False)
+    def mkmanydimension(self, names, commit=defaultCommit):
+        tups = [(name,) for name in names]
+        self.mkmany("dimension", ("name"), tups, commit=False)
         if commit:
             self.conn.commit()
-
-    def loaddimension(self, name):
-        qrystr = "select name from place where dimension=?;"
-        self.readcursor.execute(qrystr, (name,))
-        places = self.getmanyplace(untuple(self.readcursor.fetchall()))
-        portals = []  # could optimize by writing a function getportalsfrommanyplaces
-        for place in places:
-            portals += self.getportalsfrom(place)
-        dim = Dimension(name, places, portals)
-
-    def loadmanydimension(self, names):
-        qm = ["?"] * len(names)
-        qrystr = "select dimension, name from place where dimension in (" +\
-                 ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, names)
-        rows = self.readcursor.fetchall()
-        places = {}
-        self.getmanyplaces([row[1] for row in rows])
-        for row in rows:
-            if row[0] not in places:
-                places[row[0]] = []
-            places[row[0]].append(self.placemap[row[1]])
-        portals = {}
-        for name in names:
-            # I could optimize by writing a function getportalsfrommany
-            portals[name] = self.getportalsfrom(name).values()
-        r = {}
-        for name in names:
-            dim = Dimension(name, places[name], portals[name])
-            r[name] = dim
-            self.dimmap[name] = dim
-        return r
-
-    def getdimension(self, name):
-        if name in self.dimdict:
-            return self.dimdict[name]
-        else:
-            return self.loaddimension(name)
-
-    def getmanydimension(self, names):
-        unloaded = list(names)
-        r = []
-        for name in unloaded:
-            if name in self.dimdict:
-                dim = self.dimdict[name]
-                r.append(dim)
-                name = ''
-        unloaded.remove('')
-        r += self.loadmanydimension(unloaded)
-        return r
 
     def knowplace(self, name):
         self.readcursor.execute("select count(*) from place where name=?;",
@@ -482,937 +382,325 @@ class Database:
     def haveplace(self, place):
         return self.knowplace(place.name)
 
-    def mkplace(self, name, commit=defaultCommit):
-        # Places should always exist in the database before they are
-        # Python objects.
-        self.writecursor.execute("insert into item values (?);", (name,))
-        self.writecursor.execute("insert into place values (?);", (name,))
+    def mkplace(self, dimension, place, commit=defaultCommit):
+        qrystr = "insert into item values (?, ?);"
+        qrytup = (dimension, place)
+        self.writecursor.execute(qrystr, qrytup)
+        qrystr = "insert into place values (?, ?);"
+        self.writecursor.execute(qrystr, qrytup)
         if commit:
             self.conn.commit()
 
-    def mkmanyplace(self, placetups, commit=defaultCommit):
-        self.mkmany("thing", placetups, commit=False)
-        self.mkmany("place", placetups, commit=False)
+    def mkmanyplace(self, tups, commit=defaultCommit):
+        self.mkmany("item", ("dimension", "name"), tups, commit=False)
+        self.mkmany("place", ("dimension", "name"), tups, commit=False)
         if commit:
             self.conn.commit()
 
-    def writeplace(self, name, commit=defaultCommit):
-        if not self.knowplace(name):
-            self.mkplace(name, commit=False)
-        if commit:
-            self.conn.commit()
+    def loadplace(self, dim, name):
+        contents = self.getcontents(dim, name)
+        portals = self.getportalsfrom(dim, name)
+        place = Place(dim, name, contents, portals)
+        self._remember_place(place)
+        return place
 
-    def saveplace(self, place, commit=defaultCommit):
-        self.writeplace(place.name, commit)
+    def loadmanyplace(self, tups):
+        """Assume that each of the given tuples represents the primary key of
+a Place. Load everything in the Place, and every attribute it
+has. Return a 2-dimensional dictionary mapping names and dimensions to
+Place objects.
 
-    def loadplace(self, name):
-        if not self.knowplace(name):
-            return None
-        attributes = self.getattributionson(name)
-        contents = self.getcontents(name)
-        portals = self.getportalsfrom(name)
-        p = Place(name, attributes, contents, portals)
-        self.placedict[name] = p
-        return p
-
-    def loadmanyplace(self, names):
-        pass
-
-    def getplace(self, name):
-        # Remember that this returns the *loaded* version, if there is one.
-        if name in self.placedict:
-            return self.placedict[name]
-        else:
-            return self.loadplace(name)
-
-    def getmanyplace(self, names):
-        unloaded = list(names)
-        r = []
-        for name in unloaded:
-            if name in self.placedict:
-                r.append(self.placedict[name])
-                name = ''
-        unloaded.remove('')
-        r += self.loadmanyplace(unloaded)
+        """
+        # Also, update the placedict
+        self.loadcontentsofmany(tups)
+        self.loadportalsfrommany(tups)
+        r = {}
+        for tup in tups:
+            (dim, name) = tup
+            if dim not in r:
+                r[dim] = {}
+            conts = self.contents[dim][name]
+            ports = self.portalorigdestdict[dim][name]
+            pl = Place(dim, name, conts, ports)
+            r[dim][name] = pl
+        self.placedict.update(r)
         return r
 
-    def delplace(self, name):
-        if name in self.placedict:
-            del self.placedict[name]
-        self.writecursor.execute("delete from place where name=?;", (name,))
-        self.writecursor.execute("delete from item where name=?;", (name,))
-
-    def knowthing(self, name):
+    def knowthing(self, dimension, name):
         self.readcursor.execute("select count(*) from thing where name=?;",
                                 (name,))
         return self.readcursor.fetchone()[0] == 1
 
-    def knowanything(self, namesingletons):
-        return self.knowany("thing", "(name)", namesingletons)
+    def knowanything(self, tups):
+        return self.knowany("thing", "(dimension, name)", tups)
 
-    def knowallthing(self, namesingletons):
-        return self.knowall("thing", "(name)", namesingletons)
+    def knowallthing(self, tups):
+        return self.knowall("thing", "(dimension, name)", tups)
 
     def havething(self, thing):
-        return self.knowthing(thing.name)
+        return self.knowthing(thing.dimension, thing.name)
 
-    def mkthing(self, name, commit=defaultCommit):
-        self.writecursor.execute("insert into item values (?);", (name,))
-        self.writecursor.execute("insert into thing values (?);", (name,))
+    def mkthing(self, dimension, name, commit=defaultCommit):
+        qrystr = "insert into item values (?, ?);"
+        self.writecursor.execute(qrystr, (dimension, name))
+        qrystr = "insert into thing values (?, ?);"
+        self.writecursor.execute(qrystr, (dimension, name))
         if commit:
             self.conn.commit()
 
     def mkmanything(self, thingtups, commit=defaultCommit):
-        thingen = [(thing[0],) for thing in thingtups]
-        self.mkmany("item", thingen, commit=False)
-        self.mkmany("thing", thingen, commit=False)
-        self.mkmany("containment", thingtups, commit=False)
+        self.mkmany("item", ("dimension", "name"), thingtups, commit=False)
+        self.mkmany("thing", ("dimension", "name"), thingtups, commit=False)
         if commit:
             self.conn.commit()
 
-    def updthing(self, name, commit=defaultCommit):
-        pass
+    def writething(self, dimension, name, commit=defaultCommit):
+        if not self.knowthing(dimension, name):
+            self.mkthing(dimension, name, commit)
 
-    def writething(self, name, commit=defaultCommit):
-        if self.knowthing(name):
-            self.updthing(name, commit)
-        else:
-            self.mkthing(name, commit)
-
-    def savething(self, thing, commit=defaultCommit):
-        if thing.loc is None:
-            loc = ''
-        else:
-            loc = thing.loc.name
-        self.writething(thing.name, loc, thing.att.iteritems(), commit)
-
-    def loadthing(self, name):
-        self.readcursor.execute("select container from containment "
-                                "where contained=?;", (name,))
-        atts = self.getattributiondict(attribute=None, attributed_to=name)
-        th = Thing(name, atts=atts)
-        locs = [self.getitem(it) for it in self.getcontainer(name)]
-        th.loc = dict(locs)
-        self.thingdict[name] = th
+    def loadthing(self, dimension, name):
+        loc = self.getcontainer(dimension, name)
+        cont = self.getcontents(dimension, name)
+        th = Thing(dimension, name, loc, cont)
+        self._remember_thing(th)
         return th
 
-    def loadmanything(self, names):
-        th = {}
-        outer = self.getmanycontainer(names)
-        inner = self.getmanycontents(names)
-        atts = self.getattributionsonmany(names)
-        for it in names:
-            loc = outer[it]
-            cont = inner[it]
-            att = atts[it]
-            th[it] = Thing(it, loc, att, cont)
-        self.thingdict.update(th)
-        return th
+    def loadmanything(self, tups):
+        """Assume that each of the given tuples represents the primary key of a
+Thing. Load the given Things. Return a 2-dimensional dictionary
+mapping names and dimensions to Place objects.
 
-    def getthing(self, name):
-        if name in self.thingdict:
-            return self.thingdict[name]
-        else:
-            return self.loadthing(name)
-
-    def delthing(self, thing, commit=defaultCommit):
-        if thing in self.thingdict:
-            del self.thingdict[thing]
-        self.writecursor.execute("delete from containment where "
-                                 "contained=? or container=?;", (thing, thing))
-        self.writecursor.execute("delete from thing where name=?;", (thing,))
-        self.writecursor.execute("delete from item where name=?;", (thing,))
-        if commit:
-            self.conn.commit()
-
-    def loaditem(self, name):
-        if self.knowthing(name):
-            return self.loadthing(name)
-        elif self.knowplace(name):
-            return self.loadplace(name)
-        elif self.knowportal(name):
-            return self.loadportal(name)
-        else:
-            return None
-
-    def getitem(self, name):
-        if name in self.thingdict:
-            return self.thingdict[name]
-        elif name in self.placedict:
-            return self.placedict[name]
-        elif name in self.portaldict:
-            return self.portaldict[name]
-        else:
-            return self.loaditem(name)
-
-    def _container_loaded(self, contained, dimension):
-        return dimension in self.contained_in and\
-            contained in self.contained_in[dimension]
-
-    def _contents_loaded(self, container, dimension):
-        return dimension in self.contents and\
-            container in self.contents[dimension]
-
-    def mkcontainment(self, contained, container, dimension='Physical',
-                      commit=defaultCommit):
-        self.writecursor.execute("insert into containment values (?, ?, ?);",
-                                 (dimension, contained, container))
-        if commit:
-            self.conn.commit()
-
-    def mkmanycontainment(self, conttups, dimension='Physical',
-                          commit=defaultCommit):
-        querystr = valuesins("containment", 3, len(conttups))
-        flattups = []
-        for tup in conttups:
-            flattups.append(tup[0])
-            flattups.append(tup[1])
-            flattups.append(dimension)
-        self.writecursor.execute(querystr, flattups)
-        if commit:
-            self.conn.commit()
-
-    def updcontainment(self, contained, container, dimension='Physical',
-                       commit=defaultCommit):
-        qrystr = "update containment set container=? where contained=? "\
-                 "and dimension=?;"
-        self.writecursor.execute(qrystr, (container, contained, dimension))
-        if commit:
-            self.conn.commit()
-
-    def writecontainment(self, contained, container, dimension='Physical',
-                         commit=defaultCommit):
-        if self.knowcontainment(contained, dimension):
-            self.updcontainment(contained, container, dimension, commit)
-        else:
-            self.mkcontainment(contained, container, dimension, commit)
-
-    def loadcontainer(self, containedn, dimension='Physical'):
-        self.readcursor.execute("select dimension, contained, "
-                                "container from containment where contained=? "
-                                "and dimension=?;", (containedn, dimension))
-        row = self.readcursor.fetchone()
-        if len(row) == 0:
-            return None
-        else:
-            self._contain(*row)
-            return row[2]
-
-    def loadcontents(self, container, dimension='Physical'):
-        self.readcursor.execute("select dimension, contained, container "
-                                "from containment where container=? and "
-                                "dimension=?;", (container, dimension))
-        r = self.readcursor.fetchall()
-        for row in r:
-            self._contain(*row)
-        return r
-
-    def loadmanycontainer(self, contained, dimensions=None):
+        """
+        self.loadmanycontainer(tups)
+        self.loadcontentsofmany(tups)
         r = {}
-        left = "select dimension, contained, container " +\
-               "from containment where contained in ("
-        qm = ", ".join(["?"] * len(contained))
-        if dimensions is None:
-            qrystr = left + qm + ");"
-            self.readcursor.execute(qrystr, contained)
-        else:
-            qrystr = left + qm + ") and dimension in ("
-            qrystr += ", ".join(["?"] * len(dimensions)) + ");"
-            self.readcursor.execute(qrystr, contained + dimensions)
-        for row in self.readcursor:
-            (dim, inside, outside) = row
+        for tup in tups:
+            (dim, name) = tup
+            loc = self.getcontainer(dim, name)
+            conts = self.getcontents(dim, name)
             if dim not in r:
                 r[dim] = {}
-            r[dim][inside] = outside
-            self._contain(dim, inside, outside)
+            th = Thing(dim, name, loc, conts)
+            r[dim][name] = th
+        self.thingdict.update(r)
         return r
 
-    def _contain(self, dimension, contained, container):
-        "Internal use"
-        # Update the containment dictionaries without touching the
-        # database.  That means insert contained into container under
-        # dimension, append contained unto the contents of container
-        # under dimension, and if contained already had a container,
-        # find it, call it oldcontainer, and remove contained from the
-        # contents of oldcontainer under dimension.
-        if dimension not in self.contents:
-            self.contents[dimension] = {}
-        if dimension not in self.contained_in:
-            self.contained_in[dimension] = {}
-        if container not in self.contents[dimension]:
-            self.contents[dimension][container] = [contained]
+    def getthing(self, dimension, name):
+        if dimension in self.thingdict and name in self.thingdict[dimension]:
+            return self.thingdict[dimension][name]
         else:
-            self.contents[dimension][container].append(contained)
-        if container not in self.contents2:
-            self.contents2[container] = {}
-        if dimension not in self.contents2[container]:
-            self.contents2[container][dimension] = [contained]
-        else:
-            self.contents2[container][dimension].append(contained)
-        oldcontainer = self.getcontainer(contained, dimension)
-        self.contained_in[dimension][contained] = container
-        if oldcontainer is not None:
-            self.contents[dimension][oldcontainer].remove(contained)
+            return self.loadthing(dimension, name)
 
-    def getcontainer(self, contained, dimension='Physical'):
-        if dimension in self.contained_in and\
-           contained in self.contained_in[dimension]:
-            return self.contained_in[dimension][contained]
-        else:
-            return self.loadcontainer(contained, dimension)
-
-    def getmanycontainer(self, contents, dimensions=None):
-        r = {}  # in dimension x, y is contained in z
-        if dimensions is None:
-            dimensions = self.contained_in.iterkeys()
-        for dimension in dimensions:
-            if dimension not in r:
-                r[dimension] = {}
-            for contained in contents:
-                if contained in self.contained_in[dimension]:
-                    it = self.contained_in[dimension][contained]
-                else:
-                    it = self.loadcontainer(contained, dimension)
-                r[dimension][contained] = it
+    def getmanything(self, tups):
+        unloaded = []
+        for tup in tups:
+            (dim, name) = tup
+            if dim not in self.thingdict or name not in self.thingdict[dim]:
+                unloaded.append(tup)
+        self.loadmanything(unloaded)
+        r = {}
+        for tup in tups:
+            (dim, name) = tup
+            if dim not in r:
+                r[dim] = {}
+            r[dim][name] = self.thingdict[dim][name]
         return r
 
-    def getcontents(self, container, dimension='Physical'):
-        if dimension in self.contents and\
-           container in self.contents[dimension]:
+    def knowitem(self, dimension, name):
+        return self.knowthing(dimension, name) or \
+            self.knowplace(dimension, name) or \
+            self.knowportal(dimension, name)
+
+    def loaditem(self, dimension, name):
+        if self.knowthing(dimension, name):
+            return self.loadthing(dimension, name)
+        elif self.knowplace(dimension, name):
+            return self.loadplace(dimension, name)
+        elif self.knowportal(dimension, name):
+            return self.loadportal(dimension, name)
+        else:
+            return None
+
+    def getitem(self, dimension, name):
+        if dimension in self.thingdict and \
+           name in self.thingdict[dimension]:
+            return self.thingdict[dimension][name]
+        elif dimension in self.placedict and \
+             name in self.placedict[dimension]:
+            return self.placedict[dimension][name]
+        elif dimension in self.portaldict and \
+             name in self.portaldict[dimension]:
+            return self.portaldict[dimension][name]
+        else:
+            return self.loaditem(dimension, name)
+
+    def getcontents(self, dimension, container):
+        if dimension not in self.contents or\
+           container not in self.contents[dimension]:
+            return self.loadcontents(dimension, container)
+        else:
             return self.contents[dimension][container]
 
-    def getmanycontents(self, containers, dimensions=None):
-        r = {}  # in dimension x, y contains [z1, z2, ...]
-        if dimensions is None:
-            dimensions = self.contents.iterkeys()
-        for dimension in dimensions:
-            if dimension not in r:
-                r[dimension] = {}
-            for container in containers:
-                if container in self.contents[dimension]:
-                    it = self.contents[dimension][container]
-                else:
-                    it = self.loadcontents(container, dimension)
-                r[dimension][container] = it
-        return r
-
-    def cullcontainment(self, container, keeps=[], commit=defaultCommit):
+    def cullcontainment(self, dimension, container, keeps=[],
+                        commit=defaultCommit):
         if len(keeps) == 0:
-            qrystr = "delete from containment where container=?;"
-            self.writecursor.execute(qrystr, (container,))
+            qrystr = "delete from containment where "\
+                     "dimension=? and container=?;"
+            qrytup = (dimension, container)
+            self.writecursor.execute(qrystr, qrytup)
         else:
-            inner = "?, " * (len(keeps) - 1)
-            left = "delete from containment where container=? "\
-                   "and contained not in ("
-            right = "?);"
-            sqlitefmtstr = left + inner + right
-            self.writecursor.execute(sqlitefmtstr, [container] + keeps)
+            qm = ["(?, ?)"] * len(keeps)
+            qrystr = "delete from containment where "\
+                     "dimension=? and container=? and "\
+                     "(dimension, contained) not in (" + ", ".join(qm) + ");"
+            qrylst = [dimension, container] + untuple(keeps)
+            self.writecursor.execute(qrystr, qrylst)
         if commit:
             self.conn.commit()
 
-    def knowcontents(self, container):
-        qrystr = "select count(*) from containment where container=?;"
+    def knowcontents(self, dimension, container):
+        qrystr = "select count(*) from containment "\
+                 "where dimension=? and container=? limit 1;"
         self.readcursor.execute(qrystr, (container,))
         return self.readcursor.fetchone()[0] > 0
 
     def havecontents(self, container):
-        return self.knowcontents(container.name)
+        return self.knowcontents(container.dimension, container.name)
 
-    def knowattribute(self, name):
-        qrystr = "select count(*) from attribute where name=?;"
-        self.readcursor.execute(qrystr, (name,))
-        return self.readcursor.fetchone()[0] == 1
-
-    def knowanyattribute(self, singletons):
-        return self.knowany("attribute", "(name)", singletons)
-
-    def knowallattribute(self, singletons):
-        return self.knowall("attribute", "(name)", singletons)
-
-    def mkattribute(self, name, typ=None, permitted=[], lower=None,
-                    upper=None, commit=defaultCommit):
-        """Define an attribute type for LiSE items to have.
-
-        Call this method to define an attribute that an item in the
-        game can have. These attributes are not the same as the ones
-        that every Python object has, although they behave similarly.
-
-        You can define an attribute with just a name, but you might
-        want to limit what values are acceptable for it. To do this,
-        you may supply any of the other parameters:
-
-        typ is a string. Valid types here are 'str', 'int',
-        'float', and 'bool'.
-
-        permitted is a list of values that the attribute is allowed to
-        take on. Every value in this list will be permitted, even if
-        it's the wrong type, or it falls out of the bounds.
-
-        lower and upper should be numbers. Values of the attribute
-        that are below lower or above upper will be rejected unless
-        they're in the permitted list.
-
-        """
-        if typ == '':
-            typ = None
-        elif typ not in self.typ.values():
-            raise TypeError("LiSE does not support this type: " + typ)
-        qrystr = "insert into attribute values (?, ?, ?, ?);"
-        self.writecursor.execute(qrystr, (name, typ, lower, upper))
-        for perm in permitted:
-            self.writecursor.execute("insert into permitted values (?, ?);",
-                                     (name, perm))
-        if commit:
-            self.conn.commit()
-
-    def mkmanyattribute(self, tups, commit=defaultCommit):
-        nopermitted = [(tup[0], tup[1], tup[3], tup[4]) for tup in tups]
-        onlypermitted = [tup[2] for tup in tups]
-        self.mkmany("attribute", nopermitted, commit=False)
-        self.mkmanypermitted(onlypermitted, commit=False)
-        if commit:
-            self.conn.commit()
-
-    def updattribute(self, name, typ, permitted, lower, upper, commit):
-        qrystr = "update attribute set type=?, lower=?, upper=? where name=?;"
-        self.writecursor.execute(qrystr, (typ, lower, upper))
-        qrystr = "select value from permitted where attribute=?;"
-        self.readcursor.execute(qrystr, (name,))
-        knownperms = [row[0] for row in self.readcursor]
-        createdperms = [perm for perm in permitted if perm not in knownperms]
-        deletedperms = [perm for perm in knownperms if perm not in permitted]
-        for perm in createdperms:
-            self.writepermitted(name, perm, commit=False)
-        for perm in deletedperms:
-            self.delpermitted(name, perm, commit=False)
-        if commit:
-            self.conn.commit()
-
-    def writeattribute(self, name, typ=None, permitted=[], lower=None,
-                       upper=None, commit=defaultCommit):
-        if False in [lower.hasattr(s) for s in ["__lt__", "__eq__", "__gt__"]]:
-            lower = None
-        if False in [upper.hasattr(s) for s in ["__lt__", "__eq__", "__gt__"]]:
-            upper = None
-        if typ not in self.typ.keys():
-            typ = None
-        if self.knowattribute(name):
-            self.updattribute(name, typ, permitted, lower, upper, commit)
-        else:
-            self.mkattribute(name, typ, permitted, lower, upper, commit)
-
-    def saveattribute(self, attrcheck, commit=defaultCommit):
-        assert(isinstance(attrcheck, AttrCheck))
-        permitted = []
-        lo = None
-        hi = None
-        typ = None
-        for check in attrcheck.checks:
-            if isinstance(check, LowerBoundCheck):
-                lo = check.bound
-            elif isinstance(check, UpperBoundCheck):
-                hi = check.bound
-            elif isinstance(check, TypeCheck):
-                typ = check.typ
-            elif isinstance(check, ListCheck):
-                permitted += check.list
-        self.writeattribute(attrcheck.name, typ, permitted, lo, hi, commit)
-
-    def loadattribute(self, name):
-        qrystr = "select type, lower, upper from attribute where name=?;"
-        self.readcursor.execute(qrystr, (name,))
-        (typ, lo, hi) = self.readcursor.fetchone()
-        qrystr = "select value from permitted where attribute=?;"
-        self.readcursor.execute(qrystr, (name,))
-        perms = [row[0] for row in self.readcursor]
-        attrcheck = AttrCheck(name, typ, perms, lo, hi)
-        self.attrcheckdict[name] = attrcheck
-        return attrcheck
-
-    def loadmanyattribute(self, names):
-        r = []
-        qrystr = valuesget("attribute", ("name",),
-                           ("type", "lower", "upper"), len(names))
-        self.readcursor.execute(qrystr, names)
-        ntlu_rows = self.readcursor.fetchall()
-        qrystr = valuesget("permitted", ("attribute",), ("value",), len(names))
-        self.readcursor.execute(qrystr, names)
-        perm_dict = {}
-        for row in self.readcursor:
-            (att, val) = row
-            if att in perm_dict:
-                perm_dict[att].append(val)
-            else:
-                perm_dict[att] = [val]
-        for row in ntlu_rows:
-            (name, typ, lo, hi) = row
-            if name in perm_dict:
-                r.append(AttrCheck(name, typ, perm_dict[name], lo, hi))
-            else:
-                r.append(AttrCheck(name, typ, [], lo, hi))
-        for ac in r:
-            self.attrcheckdict[ac.name] = ac
-        return r
-
-    def getattribute(self, name):
-        if name in self.attrcheckdict:
-            return self.attrcheckdict[name]
-        else:
-            return self.loadattribute(name)
-
-    def getmanyattribute(self, names):
-        unloaded = [name for name in names if name not in self.attrcheckmap]
-        self.loadmanyattribute(unloaded)
-        return [self.attrcheckmap[name] for name in names]
-
-    def delattribute(self, name, commit=defaultCommit):
-        if name in self.attrcheckdict:
-            del self.attrcheckdict[name]
-        qrystr = "delete from attribute where name=?;"
-        self.writecursor.execute(qrystr, (name,))
-        if commit:
-            self.conn.commit()
-
-    def knowpermitted(self, attr, val=None):
-        qrystr = "select count(*) from permitted where attribute=?"
-        if val is None:
-            self.readcursor.execute(qrystr, (attr,))
-        else:
-            qrystr += " and value=?"
-            self.readcursor.execute(qrystr, (attr, val))
-        return self.readcursor.fetchone()[0] > 0
-
-    def knowanypermitted(self, attrval):
-        if len(attrval[0]) == 1:  # names only
-            return self.knowany("permitted", "(attribute)", attrval)
-        else:
-            return self.knowany("permitted", "(attribute, value)", attrval)
-
-    def knowallpermitted(self, attrval):
-        if len(attrval[0]) == 1:
-            return self.knowall("permitted", "(attribute)", attrval)
-        else:
-            return self.knowall("permitted", "(attribute, value)", attrval)
-
-    def havepermitted(self, attrcheck):
-        perms = [check.lst for check in attrcheck.checks
-                 if isinstance(check, ListCheck)]
-        numperm = len(perms)
-        left = "select count(*) from permitted "\
-               "where attribute=? and value in ("
-        middle = "?, " * numperm - 1
-        right = "?);"
-        querystr = left + middle + right
-        self.readcursor.execute(querystr, perms)
-        return numperm == self.readcursor.fetchone()[0]
-
-    def mkpermitted(self, attr, val, commit=defaultCommit):
-        qrystr = "insert into permitted values (?, ?);"
-        self.writecursor.execute(qrystr, (attr, val))
-        if commit:
-            self.conn.commit()
-
-    def mkmanypermitted(self, pairs, commit=defaultCommit):
-        actualpairs = [pair for pair in pairs if len(pair) == 2]
-        if len(actualpairs) == 0:
-            return
-        meaningfulpairs = [pair for pair in actualpairs if len(pair[0]) > 0]
-        self.mkmany("permitted", meaningfulpairs, commit)
-
-    def writepermitted(self, attr, val, commit=defaultCommit):
-        if not self.knowpermitted(attr, val):
-            self.mkpermitted(attr, val, commit)
-
-    def loadpermitted(self, attr):
-        qrystr = "select val from permitted where attribute=?;"
-        self.readcursor.execute(qrystr, (attr,))
-        perms = [row[0] for row in self.readcursor]
-        if attr in self.attrcheckdict:
-            attrcheck = self.attrcheckdict[attr]
-            attrcheck.lstcheck = ListCheck(perms)
-        else:
-            attrcheck = AttrCheck(attr, vals=perms)
-            self.attrcheckdict[attr] = attrcheck
-        return attrcheck
-
-    def getpermitted(self, attr):
-        if attr in self.attrcheckdict:
-            attrcheck = self.attrcheckdict[attr]
-            if isinstance(attrcheck, ListCheck):
-                return attrcheck.lst
-            else:
-                return []
-        else:
-            return self.loadpermitted(attr)
-
-    def delpermitted(self, attr, val, commit=defaultCommit):
-        qrystr = "delete from permitted where attribute=? and value=?;"
-        self.writecursor.execute(qrystr, (attr, val))
-        if commit:
-            self.conn.commit()
-
-    def _attribute(self, item, att, val):
-        "internal use"
-        if not item in self.attrvalmap:
-            self.attrvalmap[item] = {}
-        self.attrvalmap[item][att] = val
-
-    def knowattribution(self, attr, item):
-        qrystr = "select count(*) from attribution where attribute=? "\
-                 "and attributed_to=?;"
-        self.readcursor.execute(qrystr, (attr, item))
-        return self.readcursor.fetchone()[0] > 0
-
-    def knowanyattribution(self, pairs):
-        return self.knowany("attribution", "(attribute, attributed_to)",
-                            pairs)
-
-    def knowallattribution(self, pairs):
-        return self.knowall("attribution", "(attribute, attributed_to)",
-                            pairs)
-
-    def mkattribution(self, attr, item, val, commit=defaultCommit):
-        self.writecursor.execute("insert into attribution values (?, ?, ?);",
-                                 (attr, item, val))
-        if commit:
-            self.conn.commit()
-
-    def mkmanyattribution(self, attups, commit=defaultCommit):
-        self.mkmany("attribution", attups, commit)
-
-    def updattribution(self, item, attr, val, commit=defaultCommit):
-        attrcheck = self.getattribute(attr)
-        qrystr = "update attribution set value=? where attributed_to=? "\
-                 "and attribute=?;"
-        if attrcheck.check(val):
-            self.writecursor.execute(qrystr, (val, item, attr))
-        else:
-            raise ValueError("%s is not a legal value for %s" %
-                             (str(val), attr))
-
-    def writeattribution(self, attr, item, val, commit=defaultCommit):
-        if self.knowattribution(attr, item):
-            self.updattribution(item, attr, val, commit)
-        else:
-            self.updattribution(item, attr, val, commit)
-
-    def writeattributionson(self, itemname, commit=defaultCommit):
-        for att in self.attributiondict[itemname].iteritems():
-            self.writeattribution(att[0], itemname, att[1], commit=False)
-        if commit:
-            self.conn.commit()
-
-    def saveattributionson(self, item, commit=defaultCommit):
-        self.writeattributionson(item.name, commit)
-
-    def delattribution(self, attr, item, commit=defaultCommit):
-        qrystr = "delete from attribution where attribute=? "\
-                 "and attributed_to=?;"
-        self.writecursor.execute(qrystr, (attr, item))
-        if commit:
-            self.conn.commit()
-
-    def cullattribution(self, item, keeps=[], commit=defaultCommit):
-        qrystr = "delete from attribution where attributed_to=?"
-        if len(keeps) == 0:
-            self.writecursor.execute(qrystr, (item,))
-        else:
-            inner = "?, " * (len(keeps) - 1)
-            left = qrystr + " and attribute not in ("
-            right = "?);"
-            sqlitefmtstr = left + inner + right
-            self.writecursor.execute(sqlitefmtstr, [item] + keeps)
-        if commit:
-            self.conn.commit()
-
-    def set_attr_upper_bound(self, attr, upper, commit=defaultCommit):
-        qrystr = "select count(*) from attribute where name=?;"
-        self.readcursor.execute(qrystr, (attr,))
-        if self.readcursor.fetchone()[0] == 0:
-            qrystr = "insert into attribute values (?, ?, ?, ?);"
-            self.writecursor.execute(qrystr, (attr, None, None, upper))
-        else:
-            qrystr = "update attribute set upper=? where name=?;"
-            self.writecursor.execute(qrystr, (upper, attr))
-        if commit:
-            self.conn.commit()
-
-    def set_attr_lower_bound(self, attr, lower, commit=defaultCommit):
-        qrystr = "select count(*) from attribute where name=?;"
-        self.readcursor.execute(qrystr, (attr,))
-        if self.readcursor.fetchone()[0] == 0:
-            qrystr = "insert into attribute values (?, ?, ?, ?)"
-            self.writecursor.execute(qrystr, (attr, None, lower, None))
-        else:
-            qrystr = "update attribute set lower=? where name=?;"
-            self.writecursor.execute(qrystr, (lower, attr))
-        if commit:
-            self.conn.commit()
-
-    def set_attr_bounds(self, attr, lower, upper, commit=defaultCommit):
-        qrystr = "select count(*) from attribute where name=?;"
-        self.readcursor.execute(qrystr, (attr,))
-        if self.readcursor.fetchone()[0] == 0:
-            qrystr = "insert into attribute values (?, ?, ?, ?);"
-            self.writecursor.execute(qrystr, (attr, None, lower, upper))
-        else:
-            qrystr = "update attribute set lower=?, upper=? where name=?;"
-            self.writecursor.execute(qrystr, (lower, upper, attr))
-        if commit:
-            self.conn.commit()
-
-    def set_attr_type(self, attr, typ, commit=defaultCommit):
-        qrystr = "select count(*) from attribute where name=?;"
-        self.readcursor.execute(qrystr, (attr,))
-        if self.readcursor.fetchone()[0] == 0:
-            qrystr = "insert into attribute values (?, ?, ?, ?);"
-            self.writecursor.execute(qrystr, (attr, typ, None, None))
-        else:
-            qrystr = "update attribute set type=? where name=?;"
-            self.writecursor.execute(qrystr, (typ, attr))
-        if commit:
-            self.conn.commit()
-
-    def loadattribution(self, attr, item):
-        qrystr = "select val from attribution where attribute=? "\
-                 "and attributed_to=?;"
-        self.readcursor.execute(qrystr, (attr, item))
-        v = self.readcursor.fetchone()[0]
-        self._attribute(item, attr, v)
-        return v
-
-    def loadmanyattribution(self, pairs):
-        qrystr = valuesget("attribution", ("attribute", "attributed_to"),
-                           ("value"))
-        qrylst = untuple(pairs)
-        self.readcursor.execute(qrystr, qrylst)
-        r = {}
-        for row in self.readcursor:
-            if row[1] not in r:
-                r[row[1]] = {}
-            r[row[1]][row[0]] = row[2]
-            self._attribute(row[1], row[0], row[2])
-
-    def loadattributionson(self, item):
-        qrystr = "select attr, val from attribution where attributed_to=?;"
-        self.readcursor.execute(qrystr, (item,))
-        r = {}
-        if item not in self.attributiondict:
-            self.attributiondict[item] = {}
-        for row in self.readcursor:
-            r[row[0]] = row[1]
-            self.attributiondict[item][row[0]] = row[1]
-        return r
-
-    def loadattributionsonmany(self, items):
-        qrystr = valuesget("attribution", ("attribute", "attributed_to"),
-                           ("value"), len(items))
-        qrylst = untuple(items)
-        self.readcursor.execute(qrystr, qrylst)
-        r = {}
-        for row in self.readcursor:
-            if row[1] not in r:
-                r[row[1]] = {}
-            r[row[1]][row[0]] = row[2]
-            self._attribute(row[1], row[0], row[2])
-        return r
-
-    def getattribution(self, attr, item):
-        if item in self.attributiondict:
-            if self.attributiondict[item].has_key[attr]:
-                return self.attributiondict[item][attr]
-            else:
-                return self.loadattribution(attr, item)
-        else:
-            return self.loadattribution(attr, item)
-
-    def getattributionson(self, item):
-        if item not in self.attributiondict:
-            self.loadattributionson(item)
-        return self.attributiondict[item]
-
-    def getattributionsonmany(self, items):
-        unloaded = []
-        for item in items:
-            if item not in self.attributiondict:
-                unloaded.append(item)
-        self.loadattributionsonmany(unloaded)
-        r = {}
-        for item in items:
-            if item not in r:
-                r[item] = {}
-            for att in self.attributiondict[item]:
-                if att not in r[item]:
-                    r[item][att] = self.attributiondict[item][att]
-        return r
-
-    def knowportal(self, name):
-        qrystr = "select count(*) from portal where name=? limit 1;"
-        self.readcursor.execute(qrystr, (name,))
-        return self.readcursor.fetchone()[0] == 1
-
-    def knowanyportal(self, names):
-        return self.knowany("portal", ("name"), names)
-
-    def knowallportal(self, names):
-        return self.knowall("portal", ("name"), names)
-
-    def mkportal(self, name, orig, dest, commit=defaultCommit):
-        qrystr = "insert into portal values (?, ?, ?);"
-        qrytup = (name, orig, dest)
+    def mkcontainment(self, dimension, contained, container,
+                      commit=defaultCommit):
+        qrystr = "insert into containment values (?, ?, ?);"
+        qrytup = (dimension, contained, container)
         self.writecursor.execute(qrystr, qrytup)
         if commit:
             self.conn.commit()
 
-    def mkmanyportal(self, tups, commit=defaultCommit):
-        self.mkmany("portal", tups)
+    def mkmanycontainment(self, tups, commit=defaultCommit):
+        self.mkmany("containment", ("dimension", "contained"), tups, commit)
 
-    def updportal(self, name, orig, dest, commit=defaultCommit):
-        qrystr = "update portal set from_place=?, to_place=? where name=?;"
-        qrytup = (orig, dest, name)
+    def updcontainment(self, dimension, contained, container,
+                       commit=defaultCommit):
+        qrystr = "update containment set container=? "\
+                 "where dimension=? and contained=?;"
+        qrytup = (container, dimension, contained)
         self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.default.commit()
 
-    def writeportal(self, name, orig, dest, commit=defaultCommit):
-        if self.knowportal(name):
-            self.updportal(name, orig, dest, commit)
+    def updcontents(self, dimension, container, contents_list,
+                    commit=defaultCommit):
+        qrystr = "select dimension, contained from containment "\
+                 "where dimension=? and container=?;"
+        qrytup = (dimension, container)
+        self.readcursor.execute(qrystr, qrytup)
+        already = self.readcursor.fetchall()
+        delete = [contained for contained in already
+                  if contained not in contents_list]
+        add = [contained for contained in contents_list
+               if contained not in already]
+        self.deletemanycontainment(delete, commit=False)
+        self.mkmanycontainment(add, commit=False)
+        if commit:
+            self.conn.commit()
+
+    def writecontainment(self, dimension, contained, container,
+                         commit=defaultCommit):
+        if self.knowcontainment(dimension, contained):
+            self.updcontainment(dimension, contained, container, commit)
         else:
-            self.mkportal(name, orig, dest, commit)
+            self.mkcontainment(dimension, contained, container, commit)
+
+    def writecontents(self, dimension, container, contained_list,
+                      commit=defaultCommit):
+        if self.knowcontents(dimension, container):
+            # I might supply a list of names of contained things
+            # without the dimensions on, but then again I might pair
+            # in dimensions because that's what I did elsewhere.
+            if isinstance(contained_list[0], tuple):
+                contents_list = contained_list
+            else:
+                contents_list = [(dimension, contained)
+                                 for contained in contained_list]
+            self.updcontents(dimension, container, contents_list, commit)
+        else:
+            containtups = [(dimension, container, contained)
+                           for contained in contained_list]
+            self.mkmanycontainment(containtups, commit)
+
+    def savecontents(self, container, commit=defaultCommit):
+        self.writecontents(container.dimension, container.name,
+                           container.contents, commit)
+
+    def knowportal(self, dimension, portal):
+        qrystr = "select count(*) from portal where "\
+                 "dimension=? and portal=? limit 1;"
+        qrytup = (dimension, portal)
+        self.readcursor.execute(qrystr, qrytup)
+        return self.readcursor.fetchone()[0] == 1
+
+    def haveportal(self, port):
+        return self.knowportal(port.dimension, port.name)
+
+    def mkportal(self, dimension, name, orig, dest,
+                 commit=defaultCommit):
+        qrystr = "insert into portal values (?, ?, ?, ?);"
+        qrytup = (dimension, name, orig, dest)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def updportal(self, dimension, name, orig, dest,
+                  commit=defaultCommit):
+        qrystr = "update portal set from_place=?, to_place=? "\
+                 "where dimension=? and name=?;"
+        qrytup = (orig, dest, dimension, name)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def writeportal(self, dimension, name, orig, dest,
+                    commit=defaultCommit):
+        if self.knowportal(dimension, name):
+            self.updportal(dimension, name, orig, dest, commit)
+        else:
+            self.mkportal(dimension, name, orig, dest, commit)
 
     def saveportal(self, port, commit=defaultCommit):
-        self.saveattson(port, commit=False)  # write it
-        self.writeportal(port.name, port.origin, port.destination, commit)
+        self.writeportal(port.dimension, port.name,
+                         port.orig.name, port.dest.name,
+                         commit)
 
-    def loadportal(self, name):
-        qrystr = "select from_place, to_place from portal where name=?;"
-        self.readcursor.execute(qrystr, (name,))
+    def loadportal(self, dimension, name):
+        qrystr = "select from_place, to_place from portal "\
+                 "where dimension=? and name=?;"
+        qrytup = (dimension, name)
+        self.readcursor.execute(qrystr, qrytup)
         (orign, destn) = self.readcursor.fetchone()
         orig = self.getplace(orign)
         dest = self.getplace(destn)
-        atts = self.getattributionson(name)
-        port = Portal(name, orig, dest, atts)
-        self.portaldict[name] = port
+        port = Portal(dimension, name, orig, dest)
+        self._remember_portal(port)
         return port
 
-    def getportal(self, name):
-        if name in self.portaldict:
-            return self.portaldict[name]
+    def getportal(self, dimension, name):
+        if dimension in self.portaldict and \
+           name in self.portaldict[dimension]:
+            return self.portaldict[dimension][name]
         else:
-            return self.loadportal(name)
+            return self.loadportal(dimension, name)
 
-    def loadmanyportal(self, names):
-        qm = ["?"] * len(names)
-        qrystr = "select name, from_place, to_place from portal where name in (" +\
-                 ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, names)
-        rows = self.readcursor.fetchall()
-        places = [row[1] for row in rows] + [row[2] for row in rows]
-        self.getmanyplace(places)
-        self.getattributionsonmany([row[0] for row in rows])
-        r = {}
-        for row in rows:
-            port = Portal(row[0], self.placedict[row[1]], 
-                          self.placedict[row[2]], self.attributiondict[row[0]])
-            r[row[0]] = port
-            self._connect(port)
-        return r
-
-    def getmanyportal(self, names):
-        unloaded = []
-        for name in names:
-            if name not in self.portaldict:
-                unloaded.append(name)
-        self.loadmanyportal(unloaded)
-        r = {}
-        for name in names:
-            r[name] = self.portaldict[name]
-        return r
-
-    def loadportalsfrom(self, orign):
-        qrystr = "select name, to_place from portal where from_place=?;"
-        self.readcursor.execute(qrystr, orign)
-        rows = self.readcursor.fetchall()
-        self.getattributionsonmany([row[0] for row in rows])
-        r = []
-        for row in rows:
-            port = Portal(row[0], orign, row[1], self.attributiondict[row[0]])
-            r.append(port)
-            self._connect(port)
-        return r
-
-    def loadportalsfrommany(self, origns):
-        qm = ["?"] * len(origins)
-        qrystr = "select name, from_place, to_place from portal " \
-                 "where from_place in (" + ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, origins)
-        rows = self.readcursor.fetchall()
-        self.getmanyplace([row[1] for row in rows] + [row[2] for row in rows])
-        self.getattributionsonmany([row[0] for row in rows])
-        r = {}
-        for row in rows:
-            port = Portal(row[0], self.placedict[row[1]],
-                          self.placedict[row[2]], self.attributiondict[row[3]])
-            r[row[0]] = port
-            self._connect(port)
-        return r
-
-    def _connect(self, port):
-        "Internal use"
-        self.portaldict[port.name] = port
-        self.portalorigdestdict[port.orig][port.dest] = port
-        self.portaldestorigdict[port.dest][port.orig] = port
-
-    def _dp(self, name):
-        "Internal use"
-        if name in self.portaldict:
-            p = self.portaldict[name]
-            del self.portalorigdestdict[p.orig][p.dest]
-            del self.portaldict[name]
-            del p
-
-    def delportal(self, name, commit=defaultCommit):
-        qrystr = "delete from portal where name=?;"
-        self._dp(name)
-        self.writecursor.execute(qrystr, (name,))
-        if commit:
-            self.conn.commit()
-
-    def delmanyportal(self, names, commit=defaultCommit):
-        qrystr = "delete from portal where name in "
-        qm = ["?"] * names
-        qrystr += "(" + ", ".join(qm) + ");"
-        for name in names:
-            self._dp(name)
-        self.writecursor.execute(qrystr, names)
-        if commit:
-            self.conn.commit()
-
-    def delportalsfrom(self, orig, commit=defaultCommit):
-        qrystr = "delete from portal where from_place=?;"
-        for p in self.portalorigdestdict[orig].valueiter():
-            del self.portaldict[p.name]
-        del self.portalorigdestdict[orig]
-        self.writecursor.execute(qrystr, (orig,))
-        if commit:
-            self.conn.commit()
-
-    def cullportals(self, orig, keeps, commit=defaultCommit):
-        qrystr = "select name from portal where from_place=?;"
-        self.readcursor.execute(qrystr, (orig,))
-        flatnames = [row[0] for row in self.readcursor]
-        undesired = [trash for trash in flatnames if trash not in keeps]
-        left = "delete from portal where name in ("
-        mid = "?, " * len(undesired) - 1
-        right = "?);"
-        querystr = left + mid + right
-        self.writecursor.execute(querystr, undesired)
-        left = left.replace("portal", "item")
-        querystr = left + mid + right
-        self.writecursor.execute(querystr, undesired)
+    def delportal(self, dimension, name, commit=defaultCommit):
+        if dimension in self.portaldict and name in self.portaldict[dimension]:
+            port = self.portaldict[dimension][name]
+            self._forget_portal(port)
+        qrystr = "delete from portal where dimension=? and name=?;"
+        qrytup = (dimension, name)
+        self.writecursor.execute(qrystr, qrytup)
         if commit:
             self.conn.commit()
 
     def knowspot(self, place):
-        qrystr = "select count(*) from spot where place=?;"
+        qrystr = "select count(*) from spot where place=?; limit 1"
         self.readcursor.execute(qrystr, (place,))
         return self.readcursor.fetchone()[0] > 0
 
@@ -2104,8 +1392,8 @@ class Database:
     def getmanyroute(self, tups):
         unloaded = []
         for tup in tups:
-            if tup[0] not in self.routedict or
-            tup[1] not in self.routedict[tup[0]]:
+            if tup[0] not in self.routedict or\
+               tup[1] not in self.routedict[tup[0]]:
                 unloaded.append(tup)
         self.loadmanyroute(unloaded)
         r = {}
@@ -2170,7 +1458,7 @@ class Database:
         qm = ["?"] * len(names)
         qrystr = "select name, red, green, blue from color "\
                  "where name in (" + qm + ");"
-        self.readcursor.execute(names)
+        self.readcursor.execute(qrystr, names)
         r = {}
         for row in self.readcursor:
             col = Color(*row)
