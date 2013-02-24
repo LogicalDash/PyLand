@@ -343,6 +343,8 @@ class Database:
             else:
                 self.conn.commit()
 
+### DIMENSION
+
     def knowdimension(self, name):
         qrystr = "select count(*) from dimension where name=? limit 1;"
         self.readcursor.execute(qrystr, (name,))
@@ -361,6 +363,39 @@ class Database:
         self.mkmany("dimension", ("name"), tups, commit=False)
         if commit:
             self.conn.commit()
+
+
+### ITEM
+
+    def knowitem(self, dimension, name):
+        return self.knowthing(dimension, name) or \
+            self.knowplace(dimension, name) or \
+            self.knowportal(dimension, name)
+
+    def loaditem(self, dimension, name):
+        if self.knowthing(dimension, name):
+            return self.loadthing(dimension, name)
+        elif self.knowplace(dimension, name):
+            return self.loadplace(dimension, name)
+        elif self.knowportal(dimension, name):
+            return self.loadportal(dimension, name)
+        else:
+            return None
+
+    def getitem(self, dimension, name):
+        if dimension in self.thingdict and \
+           name in self.thingdict[dimension]:
+            return self.thingdict[dimension][name]
+        elif dimension in self.placedict and \
+             name in self.placedict[dimension]:
+            return self.placedict[dimension][name]
+        elif dimension in self.portaldict and \
+             name in self.portaldict[dimension]:
+            return self.portaldict[dimension][name]
+        else:
+            return self.loaditem(dimension, name)
+
+### PLACE
 
     def knowplace(self, name):
         self.readcursor.execute("select count(*) from place where name=?;",
@@ -425,6 +460,8 @@ Place objects.
             r[dim][name] = pl
         self.placedict.update(r)
         return r
+
+### THING
 
     def knowthing(self, dimension, name):
         self.readcursor.execute("select count(*) from thing where name=?;",
@@ -506,33 +543,77 @@ mapping names and dimensions to Place objects.
             r[dim][name] = self.thingdict[dim][name]
         return r
 
-    def knowitem(self, dimension, name):
-        return self.knowthing(dimension, name) or \
-            self.knowplace(dimension, name) or \
-            self.knowportal(dimension, name)
+### PORTAL
 
-    def loaditem(self, dimension, name):
-        if self.knowthing(dimension, name):
-            return self.loadthing(dimension, name)
-        elif self.knowplace(dimension, name):
-            return self.loadplace(dimension, name)
-        elif self.knowportal(dimension, name):
-            return self.loadportal(dimension, name)
+    def knowportal(self, dimension, portal):
+        qrystr = "select count(*) from portal where "\
+                 "dimension=? and portal=? limit 1;"
+        qrytup = (dimension, portal)
+        self.readcursor.execute(qrystr, qrytup)
+        return self.readcursor.fetchone()[0] == 1
+
+    def haveportal(self, port):
+        return self.knowportal(port.dimension, port.name)
+
+    def mkportal(self, dimension, name, orig, dest,
+                 commit=defaultCommit):
+        qrystr = "insert into portal values (?, ?, ?, ?);"
+        qrytup = (dimension, name, orig, dest)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def updportal(self, dimension, name, orig, dest,
+                  commit=defaultCommit):
+        qrystr = "update portal set from_place=?, to_place=? "\
+                 "where dimension=? and name=?;"
+        qrytup = (orig, dest, dimension, name)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def writeportal(self, dimension, name, orig, dest,
+                    commit=defaultCommit):
+        if self.knowportal(dimension, name):
+            self.updportal(dimension, name, orig, dest, commit)
         else:
-            return None
+            self.mkportal(dimension, name, orig, dest, commit)
 
-    def getitem(self, dimension, name):
-        if dimension in self.thingdict and \
-           name in self.thingdict[dimension]:
-            return self.thingdict[dimension][name]
-        elif dimension in self.placedict and \
-             name in self.placedict[dimension]:
-            return self.placedict[dimension][name]
-        elif dimension in self.portaldict and \
-             name in self.portaldict[dimension]:
+    def saveportal(self, port, commit=defaultCommit):
+        self.writeportal(port.dimension, port.name,
+                         port.orig.name, port.dest.name,
+                         commit)
+
+    def loadportal(self, dimension, name):
+        qrystr = "select from_place, to_place from portal "\
+                 "where dimension=? and name=?;"
+        qrytup = (dimension, name)
+        self.readcursor.execute(qrystr, qrytup)
+        (orign, destn) = self.readcursor.fetchone()
+        orig = self.getplace(orign)
+        dest = self.getplace(destn)
+        port = Portal(dimension, name, orig, dest)
+        self._remember_portal(port)
+        return port
+
+    def getportal(self, dimension, name):
+        if dimension in self.portaldict and \
+           name in self.portaldict[dimension]:
             return self.portaldict[dimension][name]
         else:
-            return self.loaditem(dimension, name)
+            return self.loadportal(dimension, name)
+
+    def delportal(self, dimension, name, commit=defaultCommit):
+        if dimension in self.portaldict and name in self.portaldict[dimension]:
+            port = self.portaldict[dimension][name]
+            self._forget_portal(port)
+        qrystr = "delete from portal where dimension=? and name=?;"
+        qrytup = (dimension, name)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+### CONTAINMENT
 
     def getcontents(self, dimension, container):
         if dimension not in self.contents or\
@@ -631,73 +712,7 @@ mapping names and dimensions to Place objects.
         self.writecontents(container.dimension, container.name,
                            container.contents, commit)
 
-    def knowportal(self, dimension, portal):
-        qrystr = "select count(*) from portal where "\
-                 "dimension=? and portal=? limit 1;"
-        qrytup = (dimension, portal)
-        self.readcursor.execute(qrystr, qrytup)
-        return self.readcursor.fetchone()[0] == 1
-
-    def haveportal(self, port):
-        return self.knowportal(port.dimension, port.name)
-
-    def mkportal(self, dimension, name, orig, dest,
-                 commit=defaultCommit):
-        qrystr = "insert into portal values (?, ?, ?, ?);"
-        qrytup = (dimension, name, orig, dest)
-        self.writecursor.execute(qrystr, qrytup)
-        if commit:
-            self.conn.commit()
-
-    def updportal(self, dimension, name, orig, dest,
-                  commit=defaultCommit):
-        qrystr = "update portal set from_place=?, to_place=? "\
-                 "where dimension=? and name=?;"
-        qrytup = (orig, dest, dimension, name)
-        self.writecursor.execute(qrystr, qrytup)
-        if commit:
-            self.conn.commit()
-
-    def writeportal(self, dimension, name, orig, dest,
-                    commit=defaultCommit):
-        if self.knowportal(dimension, name):
-            self.updportal(dimension, name, orig, dest, commit)
-        else:
-            self.mkportal(dimension, name, orig, dest, commit)
-
-    def saveportal(self, port, commit=defaultCommit):
-        self.writeportal(port.dimension, port.name,
-                         port.orig.name, port.dest.name,
-                         commit)
-
-    def loadportal(self, dimension, name):
-        qrystr = "select from_place, to_place from portal "\
-                 "where dimension=? and name=?;"
-        qrytup = (dimension, name)
-        self.readcursor.execute(qrystr, qrytup)
-        (orign, destn) = self.readcursor.fetchone()
-        orig = self.getplace(orign)
-        dest = self.getplace(destn)
-        port = Portal(dimension, name, orig, dest)
-        self._remember_portal(port)
-        return port
-
-    def getportal(self, dimension, name):
-        if dimension in self.portaldict and \
-           name in self.portaldict[dimension]:
-            return self.portaldict[dimension][name]
-        else:
-            return self.loadportal(dimension, name)
-
-    def delportal(self, dimension, name, commit=defaultCommit):
-        if dimension in self.portaldict and name in self.portaldict[dimension]:
-            port = self.portaldict[dimension][name]
-            self._forget_portal(port)
-        qrystr = "delete from portal where dimension=? and name=?;"
-        qrytup = (dimension, name)
-        self.writecursor.execute(qrystr, qrytup)
-        if commit:
-            self.conn.commit()
+### SPOT
 
     def knowspot(self, place):
         qrystr = "select count(*) from spot where place=?; limit 1"
@@ -796,6 +811,8 @@ mapping names and dimensions to Place objects.
         self.writecursor.execute("delete from spot where place=?;", (place,))
         if commit:
             self.conn.commit()
+
+### IMG
 
     def knowimg(self, name):
         qrystr = "select count(*) from img where name=?;"
@@ -908,6 +925,8 @@ mapping names and dimensions to Place objects.
         if commit:
             self.conn.commit()
 
+### MENUITEM
+
     def mkmenuitem(self, menuname, idx, text, onclick, closer=True,
                    commit=defaultCommit):
         qrystr = "insert into menuitem values (?, ?, ?, ?, ?);"
@@ -1012,6 +1031,117 @@ mapping names and dimensions to Place objects.
         self.writecursor.execute(qrystr, (menuname, i))
         if commit:
             self.conn.commit()
+
+### MENU
+
+    def knowmenu(self, name):
+        qrystr = "select count(*) from menu where name=?;"
+        self.readcursor.execute(qrystr, (name,))
+        return self.readcursor.fetchone()[0] == 1
+
+    def knowanymenu(self, tups):
+        return self.knowany("menu", "(name)", tups)
+
+    def knowallmenu(self, tups):
+        return self.knowall("menu", "(name)", tups)
+
+    def havemenu(self, menu):
+        return self.knowmenu(menu.name)
+
+    def mkmenu(self, name, x, y, w, h, sty, dv=False, commit=defaultCommit):
+        # mkplace et al. will insert multiple values for their contents
+        # if they are supplied. To make this work similarly I should
+        # take a style object for sty, rather than a string,
+        # and insert all the colors before writing the menu w. style name.
+        # But I kind of like this simpler way.
+        qrystr = "insert into menu values (?, ?, ?, ?, ?, ?, ?);"
+        qrytup = (name, x, y, w, h, sty, dv)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def mkmanymenu(self, menutups, commit=defaultCommit):
+        self.mkmany("menu", menutups)
+
+    def updmenu(self, name, x, y, w, h, sty, commit=defaultCommit):
+        # you may not change the default-visibility after making the menu
+        qrystr = "update menu set x=?, y=?, width=?, height=?, style=? "\
+                 "where name=?;"
+        qrytup = (x, y, w, h, sty, name)
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def writemenu(self, name, x, y, w, h, sty, vis, commit=defaultCommit):
+        if self.knowmenu(name):
+            self.updmenu(name, x, y, w, h, sty, commit)
+        else:
+            self.mkmenu(name, x, y, w, h, sty, vis, commit)
+
+    def savemenu(self, menu, commit=defaultCommit):
+        self.savestyle(menu.style)
+        self.writemenu(menu.name, menu.getleft(), menu.getbot(),
+                       menu.getwidth(), menu.getheight(), menu.style.name,
+                       menu.visible, commit)
+        self.new.remove(menu)
+        self.altered.remove(menu)
+
+    def loadmenu(self, name):
+        qrystr = "select name, x, y, width, height, style, visible "\
+                 "from menu where name=?;"
+        if not self.knowmenu(name):
+            raise ValueError("Menu does not exist: %s" % name)
+        self.readcursor.execute(qrystr, (name,))
+        row = list(self.readcursor.fetchone())
+        row[5] = self.getstyle(row[5])
+        menu = Menu(*row)
+        self.menudict[name] = menu
+        return menu
+
+    def loadmanymenu(self, names):
+        qm = ["?"] * len(names)
+        qrystr = "select name, x, y, width, height, style, visible "\
+                 "from menu where name in (" +\
+                 ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, names)
+        rows = self.readcursor.fetchall()
+        styles = [row[5] for row in rows]
+        self.loadmanystyle(styles)
+        r = {}
+        for row in rows:
+            (name, x, y, width, height, style, visible) = row
+            style = self.getstyle(style)
+            menu = Menu(name, x, y, width, height, style, visible)
+            r[name] = menu
+            self.menudict[name] = menu
+        return r
+
+    def getmenu(self, name):
+        if name in self.menudict:
+            return self.menudict[name]
+        else:
+            return self.loadmenu(name)
+
+    def getmanymenu(self, names):
+        unloaded = []
+        for name in names:
+            if name not in self.menudict:
+                unloaded.append(name)
+        self.loadmanymenu(unloaded)
+        r = {}
+        for name in names:
+            r[name] = self.menudict[name]
+        return r
+
+    def delmenu(self, name, commit=defaultCommit):
+        if name in self.menudict:
+            del self.menudict[name]
+        if self.knowmenu(name):
+            self.writecursor.execute("delete from menu where name=?;", (name,))
+        if commit:
+            self.conn.commit()
+
+### MAP
 
     def knowmap(self, name):
         qrystr = "select count(*) from map where name=? limit 1;"
@@ -1143,6 +1273,98 @@ mapping names and dimensions to Place objects.
         r.update(self.loadmany(unloaded))
         return r
 
+### ROUTE
+
+    def knowroute(self, thingn):
+        qrystr = "select count(*) from step where thing=? limit 1;"
+        self.readcursor.execute(qrystr, (thingn,))
+        return self.readcursor.fetchone()[0] == 1
+
+    def haveroute(self, pawn):
+        return self.knowroute(pawn.thing.name)
+
+    def _route(self, thingn, destn, route):
+        "Internal use"
+        if thingn not in self.routedict:
+            self.routedict[thingn] = {}
+        self.routedict[thingn][destn] = route
+
+    def loadroute(self, thingn, destn):
+        qrystr = "select ord, progress, portal from step where thing=?"\
+                 " and destination=?;"
+        self.readcursor.execute(qrystr, (thingn, destn))
+        rows = self.readcursor.fetchall()
+        thing = self.getthing(thingn)
+        dest = self.getplace(destn)
+        steps = self.getmanyportal([row[2] for row in rows])
+        route = Route(steps, thing, dest)
+        self._route(thingn, destn, route)
+        return route
+
+    def loadmanyroute(self, tups):
+        qm = ["(?, ?)"] * len(tups)
+        qrystr = "select thing, destination, ord, progress, portal from step "\
+                 "where (thing, destination) in (" + ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, untuple(tups))
+        rows = self.readcursor.fetchall()
+        routesteps = {}
+        routes = {}
+        things = self.getmanything([row[0] for row in rows])
+        dests = self.getmanyplace([row[1] for row in rows])
+        ports = self.getmanyportal([row[4] for row in rows])
+        for row in rows:
+            port = ports[row[5]]
+            idx = row[2]
+            if row[0] not in routesteps:
+                routesteps[row[0]] = {}
+            if row[1] not in routesteps[row[0]]:
+                routesteps[row[1]] = []
+            while len(routesteps[row[0]][row[1]]) < idx:
+                routesteps[row[0]][row[1]].append(None)
+            routesteps[row[0]][row[1]][idx] = port
+        for tup in tups:
+            (thingn, destn) = tup
+            steps = routesteps[thingn][destn]
+            thing = things[thingn]
+            dest = dests[destn]
+            route = Route(thing, dest, steps)
+            if thingn not in routes:
+                routes[thingn] = {}
+            routes[thingn][destn] = route
+            self._route(thingn, destn, route)
+        return routes
+
+    def getroute(self, thingn, destn):
+        if thingn in self.routedict and destn in self.routedict[thingn]:
+            return self.routedict[thingn][destn]
+        else:
+            return self.loadroute(thingn)
+
+    def getmanyroute(self, tups):
+        unloaded = []
+        for tup in tups:
+            if tup[0] not in self.routedict or\
+               tup[1] not in self.routedict[tup[0]]:
+                unloaded.append(tup)
+        self.loadmanyroute(unloaded)
+        r = {}
+        for tup in tups:
+            (thing, dest) = tup
+            if thing not in r:
+                r[thing] = {}
+            r[thing][dest] = self.routedict[thing][dest]
+        return r
+
+    def delroute(self, thingn, destn, commit=defaultCommit):
+        qrystr = "delete from step where thing=? and destination=?;"
+        if thingn in self.routedict and destn in self.routedict[thingn]:
+            del self.routedict[thingn]
+        self.writecursor.execute(qrystr, (thingn, destn))
+        if commit:
+            self.conn.commit()
+
+### BOARD
+
     def knowboard(self, name, w, h, wallpaper):
         qrystr = "select count(*) from board where name=?;"
         self.readcursor.execute(qrystr, (name,))
@@ -1223,6 +1445,8 @@ mapping names and dimensions to Place objects.
         self.writecursor.execute("delete from board where name=?;", (name,))
         if commit:
             self.conn.commit()
+
+### PAWN
 
     def knowpawn(self, item, board=None):
         if board is None:
@@ -1319,98 +1543,7 @@ mapping names and dimensions to Place objects.
         if commit:
             self.conn.commit()
 
-    # Graphs may be retrieved for either a board or a
-    # dimension. Normally one board should represent one dimension,
-    # but I'm keeping them separate because using the same object for
-    # game logic and gui logic rubs me the wrong way.
-
-    def knowroute(self, thingn):
-        qrystr = "select count(*) from step where thing=? limit 1;"
-        self.readcursor.execute(qrystr, (thingn,))
-        return self.readcursor.fetchone()[0] == 1
-
-    def haveroute(self, pawn):
-        return self.knowroute(pawn.thing.name)
-
-    def _route(self, thingn, destn, route):
-        "Internal use"
-        if thingn not in self.routedict:
-            self.routedict[thingn] = {}
-        self.routedict[thingn][destn] = route
-
-    def loadroute(self, thingn, destn):
-        qrystr = "select ord, progress, portal from step where thing=?"\
-                 " and destination=?;"
-        self.readcursor.execute(qrystr, (thingn, destn))
-        rows = self.readcursor.fetchall()
-        thing = self.getthing(thingn)
-        dest = self.getplace(destn)
-        steps = self.getmanyportal([row[2] for row in rows])
-        route = Route(steps, thing, dest)
-        self._route(thingn, destn, route)
-        return route
-
-    def loadmanyroute(self, tups):
-        qm = ["(?, ?)"] * len(tups)
-        qrystr = "select thing, destination, ord, progress, portal from step "\
-                 "where (thing, destination) in (" + ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, untuple(tups))
-        rows = self.readcursor.fetchall()
-        routesteps = {}
-        routes = {}
-        things = self.getmanything([row[0] for row in rows])
-        dests = self.getmanyplace([row[1] for row in rows])
-        ports = self.getmanyportal([row[4] for row in rows])
-        for row in rows:
-            port = ports[row[5]]
-            idx = row[2]
-            if row[0] not in routesteps:
-                routesteps[row[0]] = {}
-            if row[1] not in routesteps[row[0]]:
-                routesteps[row[1]] = []
-            while len(routesteps[row[0]][row[1]]) < idx:
-                routesteps[row[0]][row[1]].append(None)
-            routesteps[row[0]][row[1]][idx] = port
-        for tup in tups:
-            (thingn, destn) = tup
-            steps = routesteps[thingn][destn]
-            thing = things[thingn]
-            dest = dests[destn]
-            route = Route(thing, dest, steps)
-            if thingn not in routes:
-                routes[thingn] = {}
-            routes[thingn][destn] = route
-            self._route(thingn, destn, route)
-        return routes
-
-    def getroute(self, thingn, destn):
-        if thingn in self.routedict and destn in self.routedict[thingn]:
-            return self.routedict[thingn][destn]
-        else:
-            return self.loadroute(thingn)
-
-    def getmanyroute(self, tups):
-        unloaded = []
-        for tup in tups:
-            if tup[0] not in self.routedict or\
-               tup[1] not in self.routedict[tup[0]]:
-                unloaded.append(tup)
-        self.loadmanyroute(unloaded)
-        r = {}
-        for tup in tups:
-            (thing, dest) = tup
-            if thing not in r:
-                r[thing] = {}
-            r[thing][dest] = self.routedict[thing][dest]
-        return r
-
-    def delroute(self, thingn, destn, commit=defaultCommit):
-        qrystr = "delete from step where thing=? and destination=?;"
-        if thingn in self.routedict and destn in self.routedict[thingn]:
-            del self.routedict[thingn]
-        self.writecursor.execute(qrystr, (thingn, destn))
-        if commit:
-            self.conn.commit()
+### COLOR
 
     def knowcolor(self, name):
         qrystr = "select count(*) from color where name=?;"
@@ -1488,6 +1621,8 @@ mapping names and dimensions to Place objects.
         self.writecursor.execute("delete from color where name=?;", (name,))
         if commit:
             self.conn.commit()
+
+### STYLE
 
     def knowstyle(self, name):
         qrystr = "select count(*) from style where name=?;"
@@ -1594,113 +1729,6 @@ mapping names and dimensions to Place objects.
             del self.styledict[name]
         if self.knowstyle(name):
             self.writecursor.execute(qrystr, (name,))
-
-    def knowmenu(self, name):
-        qrystr = "select count(*) from menu where name=?;"
-        self.readcursor.execute(qrystr, (name,))
-        return self.readcursor.fetchone()[0] == 1
-
-    def knowanymenu(self, tups):
-        return self.knowany("menu", "(name)", tups)
-
-    def knowallmenu(self, tups):
-        return self.knowall("menu", "(name)", tups)
-
-    def havemenu(self, menu):
-        return self.knowmenu(menu.name)
-
-    def mkmenu(self, name, x, y, w, h, sty, dv=False, commit=defaultCommit):
-        # mkplace et al. will insert multiple values for their contents
-        # if they are supplied. To make this work similarly I should
-        # take a style object for sty, rather than a string,
-        # and insert all the colors before writing the menu w. style name.
-        # But I kind of like this simpler way.
-        qrystr = "insert into menu values (?, ?, ?, ?, ?, ?, ?);"
-        qrytup = (name, x, y, w, h, sty, dv)
-        self.writecursor.execute(qrystr, qrytup)
-        if commit:
-            self.conn.commit()
-
-    def mkmanymenu(self, menutups, commit=defaultCommit):
-        self.mkmany("menu", menutups)
-
-    def updmenu(self, name, x, y, w, h, sty, commit=defaultCommit):
-        # you may not change the default-visibility after making the menu
-        qrystr = "update menu set x=?, y=?, width=?, height=?, style=? "\
-                 "where name=?;"
-        qrytup = (x, y, w, h, sty, name)
-        self.writecursor.execute(qrystr, qrytup)
-        if commit:
-            self.conn.commit()
-
-    def writemenu(self, name, x, y, w, h, sty, vis, commit=defaultCommit):
-        if self.knowmenu(name):
-            self.updmenu(name, x, y, w, h, sty, commit)
-        else:
-            self.mkmenu(name, x, y, w, h, sty, vis, commit)
-
-    def savemenu(self, menu, commit=defaultCommit):
-        self.savestyle(menu.style)
-        self.writemenu(menu.name, menu.getleft(), menu.getbot(),
-                       menu.getwidth(), menu.getheight(), menu.style.name,
-                       menu.visible, commit)
-        self.new.remove(menu)
-        self.altered.remove(menu)
-
-    def loadmenu(self, name):
-        qrystr = "select name, x, y, width, height, style, visible "\
-                 "from menu where name=?;"
-        if not self.knowmenu(name):
-            raise ValueError("Menu does not exist: %s" % name)
-        self.readcursor.execute(qrystr, (name,))
-        row = list(self.readcursor.fetchone())
-        row[5] = self.getstyle(row[5])
-        menu = Menu(*row)
-        self.menudict[name] = menu
-        return menu
-
-    def loadmanymenu(self, names):
-        qm = ["?"] * len(names)
-        qrystr = "select name, x, y, width, height, style, visible "\
-                 "from menu where name in (" +\
-                 ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, names)
-        rows = self.readcursor.fetchall()
-        styles = [row[5] for row in rows]
-        self.loadmanystyle(styles)
-        r = {}
-        for row in rows:
-            (name, x, y, width, height, style, visible) = row
-            style = self.getstyle(style)
-            menu = Menu(name, x, y, width, height, style, visible)
-            r[name] = menu
-            self.menudict[name] = menu
-        return r
-
-    def getmenu(self, name):
-        if name in self.menudict:
-            return self.menudict[name]
-        else:
-            return self.loadmenu(name)
-
-    def getmanymenu(self, names):
-        unloaded = []
-        for name in names:
-            if name not in self.menudict:
-                unloaded.append(name)
-        self.loadmanymenu(unloaded)
-        r = {}
-        for name in names:
-            r[name] = self.menudict[name]
-        return r
-
-    def delmenu(self, name, commit=defaultCommit):
-        if name in self.menudict:
-            del self.menudict[name]
-        if self.knowmenu(name):
-            self.writecursor.execute("delete from menu where name=?;", (name,))
-        if commit:
-            self.conn.commit()
 
 
 if testDB:
