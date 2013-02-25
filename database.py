@@ -40,6 +40,11 @@ def valuesins(tab, x, y):
     return "insert into " + tab + " values " + valuesrows(x, y) + ";"
 
 
+def valuesdel(tab, keynames, x, y):
+    return "delete from " + tab + " where " +\
+        ", ".join(keynames) + " in (" + valuesrows(x, y) + ");"
+
+
 def valuesknow(tab, keyexp, x, y):
     return "select count(*) from " + tab + " where " + \
         keyexp + " in (" + valuesrows(x, y) + ");"
@@ -219,6 +224,24 @@ class Database:
         if dim in pdod and dest in podd[dim]:
             del podd[dim][dest]
 
+    def _remember_spot(self, spot):
+        dim = spot.dimension
+        place = spot.place.name
+        board = spot.board.name
+        if dim not in self.spotdict:
+            self.spotdict[dim] = {}
+        if place not in self.spotdict[dim]:
+            self.spotdict[dim][place] = {}
+        self.spotdict[dim][place][board] = spot
+
+    def _forget_spot(self, spot):
+        dim = spot.dimension
+        place = spot.place.name
+        board = spot.board.name
+        sd = self.spotdict
+        if dim in sd and place in sd[dim] and board in sd[dim][place]:
+            del sd[dim][place][board]
+
     def mkschema(self):
         for tab in tabs:
             self.writecursor.execute(tab)
@@ -255,6 +278,13 @@ class Database:
         querystr = valuesins(tname, len(valtups[0]), len(valtups))
         vals = untuple(valtups)
         self.writecursor.execute(querystr, vals)
+        if commit:
+            self.conn.commit()
+
+    def delmany(self, tname, keyexp, keytups, commit=defaultCommit):
+        querystr = valuesdel(tname, keyexp, len(keytups[0]), len(keytups))
+        keys = untuple(keytups)
+        self.writecursor.execute(querystr, keys)
         if commit:
             self.conn.commit()
 
@@ -364,6 +394,19 @@ class Database:
         if commit:
             self.conn.commit()
 
+    def deldimension(self, name, commit=defaultCommit):
+        qrystr = "delete from dimension where name=?;"
+        self.writecursor.execute(qrystr, (name,))
+        if commit:
+            self.conn.commit()
+
+    def delmanydimension(self, names, commit=defaultCommit):
+        qm = ["?"] * len(names)
+        qrystr = "delete from dimension where name in (" +\
+                 ", ".join(qm) + ");"
+        self.writecursor.execute(qrystr, names)
+        if commit:
+            self.conn.commit()
 
 ### ITEM
 
@@ -383,13 +426,13 @@ class Database:
             return None
 
     def getitem(self, dimension, name):
-        if dimension in self.thingdict and \
+        if dimension in self.thingdict and\
            name in self.thingdict[dimension]:
             return self.thingdict[dimension][name]
-        elif dimension in self.placedict and \
+        elif dimension in self.placedict and\
              name in self.placedict[dimension]:
             return self.placedict[dimension][name]
-        elif dimension in self.portaldict and \
+        elif dimension in self.portaldict and\
              name in self.portaldict[dimension]:
             return self.portaldict[dimension][name]
         else:
@@ -460,6 +503,44 @@ Place objects.
             r[dim][name] = pl
         self.placedict.update(r)
         return r
+
+    def getplace(self, dim, name):
+        if dim in self.placemap and name in self.placemap[dim]:
+            return self.placemap[dim][name]
+        else:
+            return self.loadplace(dim, name)
+
+    def getmanyplace(self, tups):
+        pd = self.placedict
+        unloaded = [tup for tup in tups if
+                    tup[0] not in pd or tup[1] not in pd[tup[0]]]
+        r = self.loadmanyplace(unloaded)
+        for tup in tups:
+            if tup not in unloaded:
+                r[tup[0]][tup[1]] = pd[tup[0]][tup[1]]
+        return r
+
+    def delplace(self, dim, name, commit=defaultCommit):
+        self._forget_place(dim, name)
+        qrystr = "delete from place where dimension=? and name=?;"
+        qrytup = (dim, name)
+        self.writecursor.execute(qrystr, qrytup)
+        qrystr = "delete from item where dimension=? and name=?;"
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def delmanyplace(self, tups, commit=defaultCommit):
+        for tup in tups:
+            self._forget_place(*tup)
+        qm = ["(?, ?)"] * len(tups)
+        qrystr = "delete from place where (dimension, name) in (" +\
+                 ", ".join(qm) + ");"
+        self.writecursor.execute(qrystr, tups)
+        qrystr = qrystr.replace("place", "item")
+        self.writecursor.execute(qrystr, tups)
+        if commit:
+            self.conn.commit()
 
 ### THING
 
@@ -543,6 +624,28 @@ mapping names and dimensions to Place objects.
             r[dim][name] = self.thingdict[dim][name]
         return r
 
+    def delthing(self, dimension, name, commit=defaultCommit):
+        self._forget_thing(dimension, name)
+        qrystr = "delete from thing where dimension=? and name=?;"
+        qrytup = (dimension, name)
+        self.writecursor.execute(qrystr, qrytup)
+        qrystr = qrystr.replace("thing", "item")
+        self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def delmanything(self, tups, commit=defaultCommit):
+        for tup in tups:
+            self._forget_thing(*tup)
+        qm = ["(?, ?)"] * len(tups)
+        qrystr = "delete from thing where (dimension, name) in (" +\
+                 ", ".join(qm) + ");"
+        self.writecursor.execute(qrystr, tups)
+        qrystr = qrystr.replace("thing", "item")
+        self.writecursor.execute(qrystr, tups)
+        if commit:
+            self.conn.commit()
+
 ### PORTAL
 
     def knowportal(self, dimension, portal):
@@ -552,14 +655,48 @@ mapping names and dimensions to Place objects.
         self.readcursor.execute(qrystr, qrytup)
         return self.readcursor.fetchone()[0] == 1
 
+    def knowanyportal(self, tups):
+        return self.knowany("portal", "(dimension, name)", tups)
+
+    def knowallportal(self, tups):
+        return self.knowall("portal", "(dimension, name)", tups)
+
+    def knownportals(self, tups):
+        # Return the subset of tups that is in the database
+        # tups is just keys--dimension and name--so return a list of pairs likewise.
+        qm = ["(?, ?)"] * len(tups)
+        qrystr = "select dimension, name from portal "\
+                 "where (dimension, name) in (" +\
+                 ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, tups)
+        return self.readcursor.fetchall()
+
     def haveportal(self, port):
         return self.knowportal(port.dimension, port.name)
 
+    def haveanyportal(self, ports):
+        tups = [(port.dimension, port.name) for port in ports]
+        return self.knowanyportal(tups)
+
+    def haveallportal(self, ports):
+        tups = [(port.dimension, port.name) for port in ports]
+        return self.knowallportal(tups)
+
     def mkportal(self, dimension, name, orig, dest,
                  commit=defaultCommit):
+        qrystr = "insert into item values (?, ?);"
+        qrytup = (dimension, name)
+        self.writecursor.execute(qrystr, qrytup)
         qrystr = "insert into portal values (?, ?, ?, ?);"
         qrytup = (dimension, name, orig, dest)
         self.writecursor.execute(qrystr, qrytup)
+        if commit:
+            self.conn.commit()
+
+    def mkmanyportal(self, tups, commit=defaultCommit):
+        ittups = [(tup[0], tup[1]) for tup in tups]
+        self.mkmany("item", ittups, commit=False)
+        self.mkmany("portal", tups, commit=False)
         if commit:
             self.conn.commit()
 
@@ -572,6 +709,15 @@ mapping names and dimensions to Place objects.
         if commit:
             self.conn.commit()
 
+    def updmanyportal(self, tups, commit=defaultCommit):
+        # This "updates" in the sense of overwriting every damn portal
+        # that has a key that's in tups.
+        keys = [tup[0:1] for tup in tups]
+        self.delmanyportal(keys, commit=False)
+        self.mkmanyportal(tups, commit=False)
+        if commit:
+            self.conn.commit()
+
     def writeportal(self, dimension, name, orig, dest,
                     commit=defaultCommit):
         if self.knowportal(dimension, name):
@@ -579,10 +725,18 @@ mapping names and dimensions to Place objects.
         else:
             self.mkportal(dimension, name, orig, dest, commit)
 
+    def writemanyportal(self, tups, commit=defaultCommit):
+        self.updmanyportal(tups, commit)
+
     def saveportal(self, port, commit=defaultCommit):
         self.writeportal(port.dimension, port.name,
                          port.orig.name, port.dest.name,
                          commit)
+
+    def savemanyportal(self, ports, commit=defaultCommit):
+        tups = [(port.dimension, port.name, port.orig.name, port.dest.name)
+                for port in ports]
+        self.writemanyportal(tups, commit)
 
     def loadportal(self, dimension, name):
         qrystr = "select from_place, to_place from portal "\
@@ -596,12 +750,101 @@ mapping names and dimensions to Place objects.
         self._remember_portal(port)
         return port
 
+    def loadmanyportal(self, tups):
+        r = dict([(tup[0], {}) for tup in tups])
+        qm = ["(?, ?)"] * len(tups)
+        qrystr = "select dimension, name, from_place, to_place from portal "\
+                 "where (dimension, name) in (" + ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, tups)
+        rows = self.readcursor.fetchall()
+        origs = [row[2] for row in rows]
+        dests = [row[3] for row in rows]
+        placedict = self.getmanyplace(origs + dests)
+        for row in rows:
+            (dim, name, orign, destn) = row
+            port = Portal(dim, name, placedict[orign], placedict[destn])
+            r[dim][name] = port
+            self._remember_portal(port)
+        return r
+
+    def loadportalsfrom(self, dimension, orig):
+        qrystr = "select dimension, name, from_place, to_place from portal "\
+                 "where dimension=? and from_place=?;"
+        qrytup = (dimension, orig)
+        self.readcursor.execute(qrystr, qrytup)
+        rows = self.readcursor.fetchall()
+        orig = self.getplace(dimension, orig)
+        dests = [(dimension, row[3]) for row in rows]
+        destdict = self.getmanyplace(dests)
+        r = []
+        for row in rows:
+            dim = dimension
+            name = row[1]
+            if dim in self.portaldict and name in self.portaldict[dim]:
+                port = self.portaldict[dim][name]
+            else:
+                dest = destdict[dim][row[3]]
+                port = Portal(dim, name, orig, dest)
+                self._remember_portal(port)
+            r.append(port)
+        self.portalorigdestdict[dimension][orig] = r
+        return r
+
+    def loadportalsto(self, dimension, dest):
+        qrystr = "select dimension, name, from_place, to_place from portal "\
+                 "where dimension=? and to_place=?;"
+        qrytup = (dimension, dest)
+        self.readcursor.execute(qrystr, qrytup)
+        rows = self.readcursor.fetchall()
+        origs = [(dimension, row[2]) for row in rows]
+        dest = self.getplace(dimension, dest)
+        origdict = self.getmanyplace(origs)
+        r = []
+        for row in rows:
+            dim = dimension
+            name = row[1]
+            if dim in self.portaldict and name in self.portaldict[dim]:
+                port = self.portaldict[dim][name]
+            else:
+                orig = origdict[dim][row[2]]
+                port = Portal(dim, name, orig, dest)
+                self._remember_portal(port)
+            r.append(port)
+        self.portaldestorigdict[dimension][dest] = r
+        return r
+
     def getportal(self, dimension, name):
         if dimension in self.portaldict and \
            name in self.portaldict[dimension]:
             return self.portaldict[dimension][name]
         else:
             return self.loadportal(dimension, name)
+
+    def getmanyportal(self, tups):
+        unloaded = [tup for tup in tups if
+                    tup[0] not in self.portaldict or
+                    tup[1] not in self.portaldict[tup[0]]]
+        loaded = [tup for tup in tups if tup not in unloaded]
+        r = dict([(tup[0], {}) for tup in loaded])
+        for tup in loaded:
+            (dim, name) = tup
+            r[dim][name] = self.portaldict[dim][name]
+        r.update(self.loadmanyportal(unloaded))
+        return r
+
+    def getportalsfrom(self, dimension, place):
+        podd = self.portalorigdestdict
+        if dimension in podd and place in podd[dimension]:
+            return podd[dimension][place]
+        else:
+            return self.loadportalsfrom(dimension, place)
+
+    def getportalsto(self, dimension, place):
+        pdod = self.portaldestorigdict
+        if dimension in pdod and place in pdod[dimension]:
+            return pdod[dimension][place]
+        else:
+            return self.loadportalsto(dimension, place)
 
     def delportal(self, dimension, name, commit=defaultCommit):
         if dimension in self.portaldict and name in self.portaldict[dimension]:
@@ -613,6 +856,14 @@ mapping names and dimensions to Place objects.
         if commit:
             self.conn.commit()
 
+    def delmanyportal(self, tups, commit=defaultCommit):
+        qm = ["(?, ?)"] * len(tups)
+        qrystr = "delete from portal where (dimension, name) in (" +\
+                 ", ".join(qm) + ");"
+        self.writecursor.execute(qrystr, tups)
+        if commit:
+            self.conn.commit()
+
 ### CONTAINMENT
 
     def getcontents(self, dimension, container):
@@ -621,23 +872,6 @@ mapping names and dimensions to Place objects.
             return self.loadcontents(dimension, container)
         else:
             return self.contents[dimension][container]
-
-    def cullcontainment(self, dimension, container, keeps=[],
-                        commit=defaultCommit):
-        if len(keeps) == 0:
-            qrystr = "delete from containment where "\
-                     "dimension=? and container=?;"
-            qrytup = (dimension, container)
-            self.writecursor.execute(qrystr, qrytup)
-        else:
-            qm = ["(?, ?)"] * len(keeps)
-            qrystr = "delete from containment where "\
-                     "dimension=? and container=? and "\
-                     "(dimension, contained) not in (" + ", ".join(qm) + ");"
-            qrylst = [dimension, container] + untuple(keeps)
-            self.writecursor.execute(qrystr, qrylst)
-        if commit:
-            self.conn.commit()
 
     def knowcontents(self, dimension, container):
         qrystr = "select count(*) from containment "\
@@ -714,103 +948,162 @@ mapping names and dimensions to Place objects.
 
 ### SPOT
 
-    def knowspot(self, place):
-        qrystr = "select count(*) from spot where place=?; limit 1"
-        self.readcursor.execute(qrystr, (place,))
-        return self.readcursor.fetchone()[0] > 0
+    def knowspot(self, dimension, place, board):
+        qrystr = "select count(*) from spot where "\
+                 "dimension=? and place=? and "\
+                 "board=? limit 1;"
+        qrytup = (dimension, place, board)
+        self.readcursor.execute(qrystr, qrytup)
+        return self.readcursor.fetchone()[0] == 1
 
     def knowanyspot(self, tups):
-        return self.knowany("spot", "(place)", tups)
+        return self.knowany("spot", "(dimension, place, board)", tups)
 
     def knowallspot(self, tups):
-        return self.knowall("spot", "(place)", tups)
+        return self.knowall("spot", "(dimension, place, board)", tups)
 
-    def havespot(self, place):
-        if place in self.spotdict:
-            return True
-        else:
-            return self.knowspot(place.name)
+    def knownspots(self, tups):
+        qm = ["(?, ?, ?)"] * len(tups)
+        qrystr = "select dimension, place, board from spot where "\
+                 "(dimension, place, board) in " + ", ".join(qm) + ");"
+        self.readcursor.execute(qrystr, tups)
+        return self.readcursor.fetchall()
 
-    def mkspot(self, place, board, x, y, r, commit=defaultCommit):
-        self.writecursor.execute("insert into spot values (?, ?, ?, ?);",
-                                 (place, board, x, y, r))
+    def havespot(self, spot):
+        return self.knowspot(spot.dimension, spot.place.name, spot.board.name)
+
+    def haveanyspot(self, spots):
+        tups = [(spot.dimension, spot.place.name, spot.board.name)
+                for spot in spots]
+        return self.knowanyspot(tups)
+
+    def haveallspot(self, spots):
+        tups = [(spot.dimension, spot.place.name, spot.board.name)
+                for spot in spots]
+        return self.knowallspot(tups)
+
+    def hadspots(self, spots):
+        tups = [(spot.dimension, spot.place.name, spot.board.name)
+                for spot in spots]
+        return self.knownspots(tups)
+
+    def mkspot(self, dimension, place, board, x, y, r, commit=defaultCommit):
+        qrystr = "insert into spot values (?, ?, ?, ?, ?, ?);"
+        qrytup = (dimension, place, board, x, y, r)
+        self.writecursor.execute(qrystr, qrytup)
         if commit:
             self.conn.commit()
 
     def mkmanyspot(self, tups, commit=defaultCommit):
         self.mkmany("spot", tups, commit)
 
-    def updspot(self, place, board, x, y, r, commit=defaultCommit):
-        qrystr = "update spot set x=?, y=?, r=? where place=? and board=?;"
-        self.writecursor.execute(qrystr, (x, y, r, place, board))
+    def updspot(self, dimension, place, board, x, y, r, commit=defaultCommit):
+        qrystr = "update spot set x=?, y=?, r=? "\
+                 "where dimension=? and place=? and board=?;"
+        qrytup = (x, y, r, dimension, place, board)
+        self.writecursor.execute(qrystr, qrytup)
         if commit:
             self.conn.commit()
 
-    def writespot(self, place, x, y, r, commit=defaultCommit):
-        if self.knowspot(place):
-            self.updspot(place, x, y, r, commit)
+    def updmanyspot(self, tups, commit=defaultCommit):
+        self.delmanyspot(tups, commit=False)
+        self.mkmanyspot(tups, commit=False)
+        if commit:
+            self.conn.commit()
+
+    def writespot(self, dimension, place, board, x, y, r,
+                  commit=defaultCommit):
+        if self.knowspot(dimension, place, board):
+            self.updspot(dimension, place, board, x, y, r, commit)
         else:
-            self.mkspot(place, x, y, r, commit)
+            self.mkspot(dimension, place, board, x, y, r, commit)
+
+    def writemanyspot(self, tups, commit=defaultCommit):
+        self.updmanyspot(tups, commit)
 
     def savespot(self, spot, commit=defaultCommit):
-        self.writespot(spot.place.name, spot.x, spot.y, spot.r, commit)
-        self.new.remove(spot)
-        self.altered.remove(spot)
+        self.writespot(spot.dimension, spot.place.name, spot.board.name,
+                       spot.x, spot.y, spot.r, commit)
 
-    def loadspot(self, placen, boardn):
-        qrystr = "select x, y, r from spot where place=? and board=?;"
-        self.readcursor.execute(qrystr, (placen, boardn))
-        spottup = (self.getplace(placen),
-                   self.getboard(boardn)) + self.readcursor.fetchone()
-        spot = Spot(*spottup)
-        if boardn not in self.spotdict:
-            self.spotdict[boardn] = {}
-        self.spotdict[boardn][placen] = spot
+    def savemanyspot(self, spots, commit=defaultCommit):
+        tups = [(spot.dimension, spot.place.name, spot.board.name,
+                 spot.x, spot.y, spot.r) for spot in spots]
+        self.writemanyspot(tups, commit)
+
+    def loadspot(self, dimension, place, board):
+        qrystr = "select x, y, r from spot where "\
+                 "dimension=? and place=? and board=?;"
+        qrytup = (dimension, place, board)
+        self.readcursor.execute(qrystr, qrytup)
+        (x, y, r) = self.readcursor.fetchone()
+        placeobj = self.getplace(place)
+        boardobj = self.getboard(board)
+        spot = Spot(dimension, placeobj, boardobj, x, y, r)
+        self._remember_spot(spot)
         return spot
 
-    def loadmanyspot(self, placeboards):
-        qrystr = valuesget("spot", ("place", "board"), ("x", "y", "r"),
-                           len(placeboards))
-        self.readcursor.execute(qrystr, placeboards)
+    def loadmanyspot(self, tups):
+        qrystr = valuesget("spot",
+                           ("dimension", "place", "board"),
+                           ("x", "y", "r"),
+                           len(tups))
+        self.readcursor.execute(qrystr, tups)
+        rows = self.readcursor.fetchall()
+        placedict = self.getmanyplace([row[1] for row in rows])
+        boarddict = self.getmanyboard([row[2] for row in rows])
         r = {}
-        for row in self.readcursor:
-            (place, board, x, y, r) = row
-            spot = Spot(*row)
-            if board not in r:
-                r[board] = {}
-            r[board][place] = spot
-            self.spotdict[board][place] = spot
+        for tup in tups:
+            r[tup[0]] = {}
+            r[tup[0]][tup[1]] = {}
+        for row in rows:
+            (dim, plc, brd, x, y, r) = row
+            place = placedict[dim][plc]
+            board = boarddict[dim][brd]
+            spot = Spot(dim, place, board, x, y, r)
+            r[dim][plc][brd] = spot
+        self.spotdict.update(r)
         return r
 
-    def getspot(self, placen, boardn):
-        if boardn in self.spotdict and placen in self.spotdict[boardn]:
-            return self.spotdict[boardn][placen]
+    def getspot(self, dimension, place, board):
+        sd = self.spotdict
+        if dimension in sd and place in sd[dimension] \
+           and board in sd[dimension][place]:
+            return sd[dimension][place][board]
         else:
-            return self.loadspot(placen, boardn)
+            return self.loadspot(dimension, place, board)
 
-    def getmanyspot(self, placeboards):
+    def getmanyspot(self, tups):
         loaded = []
         unloaded = []
-        for placeboard in placeboards:
-            (place, board) = placeboard
-            if board in self.spotdict and place in self.spotdict[board]:
-                loaded.append(placeboard)
+        sd = self.spotdict
+        for tup in tups:
+            (d, p, b) = tup
+            if d in sd and p in sd[d] and b in sd[d][p]:
+                loaded.append(tup)
             else:
-                unloaded.append(placeboard)
-        r = {}
-        for placeboard in loaded:
-            (place, board) = placeboard
-            spot = self.spotdict[board][place]
-            if board not in r:
-                r[board] = {}
-            r[board][place] = spot
-        r.update(self.loadmanyspot(unloaded))
+                unloaded.append(tup)
+        r = self.loadmanyspot(unloaded)
+        for tup in loaded:
+            (d, p, b) = tup
+            if d not in r:
+                r[d] = {}
+            if p not in r[d]:
+                r[d][p] = {}
+            r[d][p][b] = sd[d][p][b]
         return r
 
-    def delspot(self, place, commit=defaultCommit):
-        self.writecursor.execute("delete from spot where place=?;", (place,))
+    def delspot(self, dimension, place, board, commit=defaultCommit):
+        self._forget_spot(dimension, place, board)
+        qrystr = "delete from spot where dimension=? and place=? and board=?;"
+        qrytup = (dimension, place, board)
+        self.writecursor.execute(qrystr, qrytup)
         if commit:
             self.conn.commit()
+
+    def delmanyspot(self, tups, commit=defaultCommit):
+        for tup in tups:
+            self._forget_spot(*tup)
+        self.delmany("spot", "(dimension, place, board)", tups, commit)
 
 ### IMG
 
