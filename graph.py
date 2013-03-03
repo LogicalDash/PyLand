@@ -191,7 +191,7 @@ class Place:
         return self.name == other.name
 
 
-class GenericGraph:
+class Dimension:
     def __init__(self, name, places=[], portals=[]):
         self.name = name
         self.places = places
@@ -234,13 +234,3 @@ class GenericGraph:
                                      vertex_attrs=self.get_vertex_atts(),
                                      edge_attrs=self.get_edge_atts())
         return self.igg
-
-
-class Dimension(GenericGraph):
-    pass
-
-
-class Map(GenericGraph):
-    def __init__(self, name, dim, places=[], portals=[]):
-        GenericGraph.__init__(name, places, portals)
-        self.dim = dim

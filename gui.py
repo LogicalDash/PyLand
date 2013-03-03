@@ -15,6 +15,7 @@ db.insert_defaults(d)
 gamestate = GameState(db)
 wf = WidgetFactory(db, gamestate, 'Default', window, batch)
 
+
 pyglet.clock.schedule_interval(gamestate.update, 1/60.0, 1/60.0)
 pyglet.clock.schedule_interval(wf.movepawns, 1/60.0, 1/60.0)
 

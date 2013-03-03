@@ -83,8 +83,9 @@ class Rect:
 
 
 class MenuItem:
-    def __init__(self, name, idx, text, onclick, closer=True):
-        self.name = name
+    def __init__(self, boardname, menuname, idx, text, onclick, closer=True):
+        self.boardname = boardname
+        self.menuname = menuname
         self.idx = idx
         self.text = text
         self.onclick = onclick
@@ -156,7 +157,9 @@ class MenuItem:
 
 
 class Menu:
-    def __init__(self, name, xprop, yprop, wprop, hprop, style):
+    def __init__(self, boardname, name,
+                 xprop, yprop, wprop, hprop, style, visible):
+        self.boardname = boardname
         self.name = name
         self.style = style
         if xprop < 0.0:  # place lower-left corner (100*|xprop|)% from
@@ -187,7 +190,7 @@ class Menu:
         self.rect = Rect(self.x, self.y, self.width, self.height,
                          self.style.bgcolor)
         self._scrolled_to = 0
-        self.visible = False
+        self.visible = visible
 
     def __getitem__(self, i):
         return self.items.__getitem__(i)
@@ -269,20 +272,19 @@ class Spot:
     place; at the given x and y coordinates on the screen; in the
     given graph of Spots. The Spot will be magically connected to the other
     Spots in the same way that the underlying Places are connected."""
-    def __init__(self, place, x, y, r, imgname, spotgraph):
+    def __init__(self, dimension, place, img, x, y):
         self.place = place
         self.x = x
         self.y = y
-        self.r = r
-        self.spotgraph = spotgraph
-        self.img = self.wf.db.getimg(imgname)
+        self.r = 8
+        self.img = img
 
-    def __repr__(self):
+    def __str__(self):
         coords = "(%i,%i)" % (self.x, self.y)
         return "Spot at " + coords + " representing " + str(self.place)
 
-    def __str__(self):
-        return "(%i,%i)->%s" % (self.x, self.y, str(self.place))
+    def __repr__(self):
+        return "spot(%i,%i)->%s" % (self.x, self.y, str(self.place))
 
     def getleft(self):
         return self.x - self.r
@@ -320,12 +322,10 @@ class Pawn:
     """
     # Coordinates should really be relative to the Board and not the
     # uh, canvas? is that what they are called in pyglet?
-    def __init__(self, thing, board, img, x, y, place):
+    def __init__(self, dim, thing, place, img):
+        self.dimension = dim
         self.thing = thing
-        self.board = board
         self.img = img
-        self.x = x
-        self.y = y
         self.place = place
         self.visible = False
 
@@ -335,17 +335,24 @@ class Pawn:
 
 
 class Board:
-    def __init__(self, placemap, width, height, texture):
+    def __init__(self, dim, width, height, texture,
+                 spots=[], pawns=[], menus=[]):
+        self.dimension = dim
         self.width = width
         self.height = height
         self.tex = texture
-        self.pawns = []
+        self.spots = spots
+        self.pawns = pawns
+        self.menus = menus
 
     def getwidth(self):
         return self.width
 
     def getheight(self):
         return self.height
+
+    def getmap(self):
+        return self.mapobj
 
 
 class Style:

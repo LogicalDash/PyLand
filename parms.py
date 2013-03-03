@@ -25,55 +25,48 @@ tabs = ["CREATE TABLE dimension "
         " foreign key(dimension, to_place) references place(dimension, name), "
         "primary key(dimension, name), "
         "check(from_place<>to_place));",
+        "CREATE TABLE location "
+        "(dimension, thing, place "
+        "foreign key(dimension, thing) references thing(dimension, name), "
+        "foreign key(dimension, place) references place(dimension, name), "
+        "primary key(dimension, thing));",
         "CREATE TABLE containment "
         "(dimension, contained, container, "
-        "foreign key(dimension, contained) references item(dimension, name), "
-        "foreign key(dimension, container) references item(dimension, name), "
-        "primary key(dimension, contained), "
-        "check(contained<>container);",
+        "foreign key(dimension, contained) references thing(dimension, name), "
+        "foreign key(dimension, container) references thing(dimension, name), "
+        "primary key(dimension, contained));",
         "CREATE TABLE attribute "
         "(name text primary key, type text, lower, upper);",
         "CREATE TABLE attribution "
         "(dimension, attributed_to, attribute, value, "
         "foreign key(dimension, attributed_to) "
         "references item(dimension, name), "
-        "foreign key(attribute) references attribute(name));"
+        "foreign key(attribute) references attribute(name));",
         "CREATE TABLE permitted "
         "(attribute, value, "
-        "foreign key(attribute) references attribute(name));"
+        "foreign key(attribute) references attribute(name));",
         "CREATE TABLE img "
         "(name text primary key, path, rltile);",
-        "CREATE TABLE map "
-        "(dimension, name text primary key, "
-        "foreign key(dimension) references dimension(name));"
-        "CREATE TABLE map_place "
-        "(map, place, dimension, "
-        "foreign key(map, dimension) references map(name, dimension), "
-        "foreign key(place, dimension) references place(name, dimension), "
-        "primary key(place, dimension));",
-        "CREATE TABLE map_port "
-        "(dimension, map, port, "
-        "foreign key(map) references map(name), "
-        "foreign key(dimension, port) references portal(dimension, name));",
         "CREATE TABLE board "
-        "(map primary key, width integer, height integer, wallpaper, "
-        "foreign key(map) references map(name), "
+        "(dimension primary key, width integer, height integer, wallpaper, "
+        "foreign key(dimension) references dimension(name), "
         "foreign key(wallpaper) references image(name));",
         "CREATE TABLE spot "
-        "(dimension, place, board, x integer, y integer, r integer, "
+        "(dimension, place, img, x, y"
         "foreign key(dimension, place) references place(dimension, name), "
-        "foreign key(board) references board(name), "
-        "primary key(dimension, place, board));",
+        "foreign key(img) references img(name), "
+        "primary key(dimension, place);",
         "CREATE TABLE pawn "
-        "(dimension, thing, board, img, "
+        "(dimension, thing, img, "
         "foreign key(img) references img(name), "
         "foreign key(dimension, thing) references thing(dimension, name), "
-        "primary key(dimension, thing, board));",
+        "primary key(dimension, thing));",
         "CREATE TABLE color "
         "(name text primary key, "
         "red integer not null check(red between 0 and 255), "
         "green integer not null check(green between 0 and 255), "
-        "blue integer not null check(blue between 0 and 255));",
+        "blue integer not null check(blue between 0 and 255), "
+        "alpha integer default 255 check(alpha between 0 and 255));",
         "CREATE TABLE style "
         "(name text primary key, "
         "fontface text not null, "
@@ -99,22 +92,24 @@ tabs = ["CREATE TABLE dimension "
         "CREATE TABLE menuitem "
         "(menu text, idx integer, text text, onclick text, closer boolean, "
         "foreign key(menu) references menu(name), primary key(menu, idx));",
+        "CREATE TABLE boardmenu "
+        "(board text, menu text, "
+        "foreign key(board) references board(dimension), "
+        "foreign key(menu) references menu(name));",
         "CREATE TABLE step "
         "(dimension, "
-        "map, "
         "thing, "
-        "ord integer not null, "
         "destination, "
         "portal, "
-        "progress float not null, "
-        "foreign key(map) references map(name), "
+        "idx integer, "
+        "progress float, "
         "foreign key(dimension, thing) references thing(dimension, name), "
         "foreign key(dimension, portal) references portal(dimension, name), "
         "foreign key(dimension, destination) "
         "references place(dimension, name), "
         "check(progress>=0.0), "
         "check(progress<1.0), "
-        "primary key(dimension, map, thing, ord, destination));"]
+        "primary key(dimension, thing, destination, idx));"]
 
 
 stubs = ['start_new_map',
@@ -191,9 +186,6 @@ placenames = ['myroom',
               'outside']
 
 
-places = [(p, 'Physical') for p in placenames]
-
-
 atts = [('life', 'bool'),
         ('bulk', 'int', [], 0),
         ('grams', 'float', [], 0.0),
@@ -203,72 +195,88 @@ atts = [('life', 'bool'),
          1, 12)]
 
 
+def reciprocate(porttup):
+    return (porttup[1], porttup[0])
+
+
+def reciprocate_all(porttups):
+    return [reciprocate(port) for port in porttups]
+
+
+def reciprocal_pairs(pairs):
+    return pairs + [reciprocate(pair) for pair in pairs]
+
+
 class DefaultParameters:
     def addstub(self, stub):
         exec('def %s():\n\tpass\n\nself.stubs["%s"]=%s' % (stub, stub, stub))
 
     def __init__(self):
+        self.dimensions = [("Physical")]
         self.tabs = tabs
         self.stubs = {}
         for stub in stubs:
             self.addstub(stub)
         # I'm going to have the menu bar on the left of the
         # screen. For convenience.
-        self.menus = [(('Game',), (0.1, -0.02, 0.8, -0.2, 'Default', False)),
-                      (('Editor',), (0.1, -0.24, 0.8, -0.2, 'Default', False)),
-                      (('Place',), (0.1, -0.46, 0.8, -0.2, 'Default', False)),
-                      (('Thing',), (0.1, -0.68, 0.8, -0.2, 'Default', False)),
-                      (('Main',), (0.0, 0.0, 0.1, 1.0, 'Default', False))]
+        self.menus = [('Game', 0.1, -0.02, 0.8, -0.2, 'Default', False),
+                      ('Editor', 0.1, -0.24, 0.8, -0.2, 'Default', False),
+                      ('Place', 0.1, -0.46, 0.8, -0.2, 'Default', False),
+                      ('Thing', 0.1, -0.68, 0.8, -0.2, 'Default', False),
+                      ('Main', 0.0, 0.0, 0.1, 1.0, 'Default', False)]
+        menunames = [tup[0] for tup in self.menus]
         self.menuitems = []
         i = 0
         for item in game_menu_items.iteritems():
-            self.menuitems.append((('Game', i), (item[0], item[1], True)))
+            self.menuitems.append(('Game', i, item[0], item[1], True))
             i += 1
         i = 0
         for item in editor_menu_items.iteritems():
-            self.menuitems.append((('Editor', i), (item[0], item[1], True)))
+            self.menuitems.append(('Editor', i, item[0], item[1], True))
             i += 1
         i = 0
         for item in place_menu_items.iteritems():
-            self.menuitems.append((('Place', i), (item[0], item[1], True)))
+            self.menuitems.append(('Place', i, item[0], item[1], True))
             i += 1
         i = 0
         for item in thing_menu_items.iteritems():
-            self.menuitems.append((('Thing', i), (item[0], item[1], True)))
+            self.menuitems.append(('Thing', i, item[0], item[1], True))
             i += 1
         i = 0
         for item in main_menu_items.iteritems():
-            self.menuitems.append((('Main', i), (item[0], item[1], False)))
+            self.menuitems.append(('Main', i, item[0], item[1], False))
             i += 1
 
-        self.colors = [(('solarized-' + color[0],),
-                        (color[1][0], color[1][1], color[1][2]))
+        self.colors = [('solarized-' + color[0],
+                        color[1][0], color[1][1], color[1][2])
                        for color in solarized_colors.iteritems()]
-        self.styles = [(('Default',),
-                        ('DejaVu Sans', 16, 6,
-                         'solarized-base03',
-                         'solarized-base2',
-                         'solarized-base1',
-                         'solarized-base01'))]
-        self.places = [((p,), ()) for p in places]
-        pos = [
-            ('myroom', 'guestroom', True),
-            ('myroom', 'mybathroom', True),
-            ('myroom', 'outside', False),
-            ('myroom', 'diningoffice', True),
-            ('myroom', 'livingroom', True),
-            ('guestroom', 'diningoffice', True),
-            ('guestroom', 'livingroom', True),
-            ('guestroom', 'mybathroom', True),
-            ('guestroom', 'outside', False),
-            ('livingroom', 'diningoffice', True),
-            ('diningoffice', 'outside', True),
-            ('diningoffice', 'kitchen', True),
-            ('livingroom', 'longhall', True),
-            ('longhall', 'momsbathroom', True),
-            ('longhall', 'momsroom', True),
-            ('momsroom', 'outside', False)]
-        self.portals = [(("portal[%s->%s]" % po[:2],), po) for po in pos]
+        self.styles = [('Default',
+                        'DejaVu Sans', 16, 6,
+                        'solarized-base03',
+                        'solarized-base2',
+                        'solarized-base1',
+                        'solarized-base01')]
+        self.places = [('Physical', p) for p in placenames]
+        rpos = [('myroom', 'guestroom'),
+                ('myroom', 'mybathroom'),
+                ('myroom', 'outside'),
+                ('myroom', 'diningoffice'),
+                ('myroom', 'livingroom'),
+                ('guestroom', 'diningoffice'),
+                ('guestroom', 'livingroom'),
+                ('guestroom', 'mybathroom'),
+                ('livingroom', 'diningoffice'),
+                ('diningoffice', 'kitchen'),
+                ('livingroom', 'longhall'),
+                ('longhall', 'momsbathroom'),
+                ('longhall', 'momsroom')]
+        nrpos = [('guestroom', 'outside'),
+                 ('diningoffice', 'outside'),
+                 ('momsroom', 'outside')]
+        pos = reciprocal_pairs(rpos) + nrpos
+        portaldict = dict([(('Physical', "portal[%s->%s]" % po), po)
+                           for po in pos])
+        self.portals = [it[0] + it[1] for it in portaldict.iteritems()]
         ths = [('me', 'myroom'),
                ('diningtable', 'diningoffice'),
                ('mydesk', 'myroom'),
@@ -277,22 +285,28 @@ class DefaultParameters:
                ('sofas', 'livingroom'),
                ('fridge', 'kitchen'),
                ('momsbed', 'momsroom')]
-        self.things = [((th[0],), th[1:]) for th in ths]
-        self.attributes = []
-        for att in atts:
-            if len(att) == 2:
-                tta = att + ([], None, None)
-            elif len(att) == 3:
-                tta = att + (None, None)
-            elif len(att) == 4:
-                tta = att+(None,)
-            else:
-                tta = att
-            self.attributes.append(((tta[0],), tta[1:]))
-        tribs = [('me', 'life', True),
-                 ('me', 'bulk', 7),
-                 ('me', 'grams', 63502.9),
-                 ('me', 'stickiness', 1),
-                 ('me', 'grade level', 'Post-secondary')]
-        self.attributions = [((trib[1], trib[0]), (trib[2],))
-                             for trib in tribs]
+        self.things = [('Physical', th[0]) for th in ths]
+        self.locations = [('Physical',) + th for th in ths]
+        mjos = ["portal[momsroom->longhall]",
+                "portal[longhall->livingroom]",
+                "portal[livingroom->diningoffice]",
+                "portal[diningoffice->outside]"]
+        steps_to_kitchen = [('Physical', 'me', 'kitchen',
+                             'portal[myroom->diningoffice]', 0,  0.0),
+                            ('Physical', 'me', 'kitchen',
+                             'portal[diningoffice->kitchen', 0, 0.0)]
+        steps_outside = []
+        i = 0
+        while i < len(mjos):
+            steps_outside.append(('Physical', 'mom', 'outside',
+                                  mjos[i], i, 0.0))
+            i += 1
+        journeys = [steps_to_kitchen, steps_outside]
+        self.steps = []
+        for journey in journeys:
+            self.steps += journey
+        self.containment = [('Physical', th[0], th[1]) for th in ths]
+        self.boards = [('Physical', 'Default')]
+        self.boardmenu = [('Default', menuname) for menuname in menunames]
+
+default = DefaultParameters()

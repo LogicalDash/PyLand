@@ -2,30 +2,22 @@ from attrcheck import AttrCheck
 
 
 class Thing:
-    def __init__(self, dimension, name, loc, cont=[]):
+    def __init__(self, dimension, name, location, contents=[]):
         self.dimension = dimension
         self.name = name
-        self.loc = loc
-        self.cont = cont
+        self.location = location
+        self.contents = contents
         self.permissions = []
         self.forbiddions = []
         self.permit_inspections = []
         self.forbid_inspections = []
-    # def __repr__(self):
-    #     if self.location is None:
-    #         loc = "nowhere"
-    #     else:
-    #         loc = str(self.location)
-    #     return self.name + "@" + loc + str(self.attribute)
 
-    def __getitem__(self, i):
-        return self.att[i]
-
-    def getloc(self, dimension):
-        return self.loc[dimension]
-
-    def physloc(self):
-        return self.loc['physical']
+    def __repr__(self):
+        if self.location is None:
+            loc = "nowhere"
+        else:
+            loc = str(self.location)
+        return self.name + "@" + loc + str(self.attribute)
 
     def add_item(self, it):
         if it in self.cont:
