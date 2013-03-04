@@ -157,38 +157,35 @@ class MenuItem:
 
 
 class Menu:
-    def __init__(self, boardname, name,
+    def __init__(self, name,
                  xprop, yprop, wprop, hprop, style, visible):
-        self.boardname = boardname
         self.name = name
         self.style = style
-        if xprop < 0.0:  # place lower-left corner (100*|xprop|)% from
-                         # the right of the window
-            self.x = self.wf.window.width + (self.wf.window.width * xprop)
-        else:  # place lower-left corner (100*|xprop|)% from the left
-               # of the window
-            self.x = self.wf.window.width * xprop
-        if yprop < 0.0:  # place lower-left corner (100*|yprop|)% from
-                         # the top of the window
-            self.y = self.wf.window.height + (self.wf.window.height * yprop)
-        else:  # place lower-left corner (100*|yprop|)% from the
-               # bottom of the window
-            self.y = self.wf.window.height * yprop
-        self.width = self.wf.window.width * abs(wprop)
-        self.height = self.wf.window.height * abs(hprop)
-        if wprop < 0.0:  # width extends to the left
-            self.y -= self.width
-        if hprop < 0.0:  # height extends downward
-            self.x -= self.height
-        self.bgcolor = Color.maybe_to_color(style.bg_inactive)
-        self.inactive_color = Color.maybe_to_color(style.fg_inactive)
-        self.active_color = Color.maybe_to_color(style.fg_active)
-        self.fontface = style.fontface
-        self.fontsize = style.fontsize
-        self.spacing = style.spacing
+        self.xprop = xprop
+        self.yprop = yprop
+        self.wprop = wprop
+        self.hprop = hprop
+        # if xprop < 0.0:  # place lower-left corner (100*|xprop|)% from
+        #                  # the right of the window
+        #     self.x = self.wf.window.width + (self.wf.window.width * xprop)
+        # else:  # place lower-left corner (100*|xprop|)% from the left
+        #        # of the window
+        #     self.x = self.wf.window.width * xprop
+        # if yprop < 0.0:  # place lower-left corner (100*|yprop|)% from
+        #                  # the top of the window
+        #     self.y = self.wf.window.height + (self.wf.window.height * yprop)
+        # else:  # place lower-left corner (100*|yprop|)% from the
+        #        # bottom of the window
+        #     self.y = self.wf.window.height * yprop
+        # self.width = self.wf.window.width * abs(wprop)
+        # self.height = self.wf.window.height * abs(hprop)
+        # if wprop < 0.0:  # width extends to the left
+        #     self.y -= self.width
+        # if hprop < 0.0:  # height extends downward
+        #     self.x -= self.height
         self.items = []
-        self.rect = Rect(self.x, self.y, self.width, self.height,
-                         self.style.bgcolor)
+        # self.rect = Rect(self.x, self.y, self.width, self.height,
+        #                  self.style.bgcolor)
         self._scrolled_to = 0
         self.visible = visible
 
@@ -229,21 +226,10 @@ class Menu:
     def getright(self):
         return self.x + self.width
 
-    def insert_item(self, i, text, onclick, closer=True):
-        if i > len(self.items):
-            i = len(self.items)
-        newitem = MenuItem(self.wf, text, onclick, closer)
-        newitem.style = self.style
-        self.items.insert(i, newitem)
-        return newitem
-
-    def remove_item(self, it):
-        self.items.remove_item(it)
-
     def addtobatch(self, batch, menugroup, labelgroup, start=0):
         if not self.visible:
             return []
-        drawn = [self.rect.addtobatch(batch, menugroup)]
+        drawn = [self.getrect().addtobatch(batch, menugroup)]
         items_height = 0
         draw_until = start
         while items_height < self.getheight() and len(self.items) > draw_until:
@@ -335,9 +321,9 @@ class Pawn:
 
 
 class Board:
-    def __init__(self, dim, width, height, texture,
+    def __init__(self, dimension, width, height, texture,
                  spots=[], pawns=[], menus=[]):
-        self.dimension = dim
+        self.dimension = dimension
         self.width = width
         self.height = height
         self.tex = texture
@@ -353,6 +339,12 @@ class Board:
 
     def getmap(self):
         return self.mapobj
+
+    def __str__(self):
+        return "A board, %d pixels wide by %d tall, representing the "\
+            "dimension %s, containing %d spots, %d pawns, and %d menus."\
+            % (self.width, self.height, self.dimension, len(self.spots),
+               len(self.pawns), len(self.menus))
 
 
 class Style:

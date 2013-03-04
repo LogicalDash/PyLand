@@ -116,16 +116,18 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
-    def __init__(self, name, origin, destination, attributes={}):
-        if origin.dimension is not destination.dimension:
-            raise Exception("No interdimensional portals")
+    def __init__(self, dimension, name, origin, destination, attributes={}):
+        self.dimension = dimension
         self.name = name
         self.dest = destination
         self.orig = origin
         self.att = attributes
 
     def __repr__(self):
-        return "(" + str(self.orig) + "->" + str(self.dest) + ")"
+        return self.name
+
+    def __str__(self):
+        return self.name
 
     def __eq__(self, other):
         return self.name == other.name

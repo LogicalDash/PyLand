@@ -17,7 +17,7 @@ class Thing:
             loc = "nowhere"
         else:
             loc = str(self.location)
-        return self.name + "@" + loc + str(self.attribute)
+        return self.name + "@" + loc
 
     def add_item(self, it):
         if it in self.cont:

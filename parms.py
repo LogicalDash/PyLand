@@ -26,7 +26,7 @@ tabs = ["CREATE TABLE dimension "
         "primary key(dimension, name), "
         "check(from_place<>to_place));",
         "CREATE TABLE location "
-        "(dimension, thing, place "
+        "(dimension, thing, place, "
         "foreign key(dimension, thing) references thing(dimension, name), "
         "foreign key(dimension, place) references place(dimension, name), "
         "primary key(dimension, thing));",
@@ -52,10 +52,10 @@ tabs = ["CREATE TABLE dimension "
         "foreign key(dimension) references dimension(name), "
         "foreign key(wallpaper) references image(name));",
         "CREATE TABLE spot "
-        "(dimension, place, img, x, y"
+        "(dimension, place, img, x, y, "
         "foreign key(dimension, place) references place(dimension, name), "
         "foreign key(img) references img(name), "
-        "primary key(dimension, place);",
+        "primary key(dimension, place));",
         "CREATE TABLE pawn "
         "(dimension, thing, img, "
         "foreign key(img) references img(name), "
@@ -96,12 +96,12 @@ tabs = ["CREATE TABLE dimension "
         "(board text, menu text, "
         "foreign key(board) references board(dimension), "
         "foreign key(menu) references menu(name));",
-        "CREATE TABLE step "
+        "CREATE TABLE journey_step "
         "(dimension, "
         "thing, "
+        "idx integer, "
         "destination, "
         "portal, "
-        "idx integer, "
         "progress float, "
         "foreign key(dimension, thing) references thing(dimension, name), "
         "foreign key(dimension, portal) references portal(dimension, name), "
@@ -109,7 +109,7 @@ tabs = ["CREATE TABLE dimension "
         "references place(dimension, name), "
         "check(progress>=0.0), "
         "check(progress<1.0), "
-        "primary key(dimension, thing, destination, idx));"]
+        "primary key(dimension, thing, idx));"]
 
 
 stubs = ['start_new_map',
@@ -181,8 +181,8 @@ placenames = ['myroom',
               'kitchen',
               'livingroom',
               'longhall',
-              'mombathroom',
-              'momroom',
+              'momsbathroom',
+              'momsroom',
               'outside']
 
 
@@ -248,7 +248,7 @@ class DefaultParameters:
             i += 1
 
         self.colors = [('solarized-' + color[0],
-                        color[1][0], color[1][1], color[1][2])
+                        color[1][0], color[1][1], color[1][2], 255)
                        for color in solarized_colors.iteritems()]
         self.styles = [('Default',
                         'DejaVu Sans', 16, 6,
@@ -284,29 +284,34 @@ class DefaultParameters:
                ('bustedchair', 'myroom'),
                ('sofas', 'livingroom'),
                ('fridge', 'kitchen'),
-               ('momsbed', 'momsroom')]
+               ('momsbed', 'momsroom'),
+               ('mom', 'momsroom')]
         self.things = [('Physical', th[0]) for th in ths]
         self.locations = [('Physical',) + th for th in ths]
         mjos = ["portal[momsroom->longhall]",
                 "portal[longhall->livingroom]",
                 "portal[livingroom->diningoffice]",
                 "portal[diningoffice->outside]"]
-        steps_to_kitchen = [('Physical', 'me', 'kitchen',
-                             'portal[myroom->diningoffice]', 0,  0.0),
-                            ('Physical', 'me', 'kitchen',
-                             'portal[diningoffice->kitchen', 0, 0.0)]
+        steps_to_kitchen = [('Physical', 'me',  0, 'kitchen',
+                             'portal[myroom->diningoffice]',  0.0),
+                            ('Physical', 'me', 1, 'kitchen',
+                             'portal[diningoffice->kitchen]', 0.0)]
         steps_outside = []
         i = 0
         while i < len(mjos):
-            steps_outside.append(('Physical', 'mom', 'outside',
-                                  mjos[i], i, 0.0))
+            steps_outside.append(('Physical', 'mom', i, 'outside',
+                                  mjos[i], 0.0))
             i += 1
-        journeys = [steps_to_kitchen, steps_outside]
-        self.steps = []
-        for journey in journeys:
-            self.steps += journey
-        self.containment = [('Physical', th[0], th[1]) for th in ths]
-        self.boards = [('Physical', 'Default')]
-        self.boardmenu = [('Default', menuname) for menuname in menunames]
+        self.steps = steps_to_kitchen + steps_outside
+        self.containments = [('Physical', th[0], th[1]) for th in ths]
+        self.boards = [('Physical', 800, 600, 'wall')]
+        self.boardmenu = [('Physical', menuname) for menuname in menunames]
+        self.imgs = [("troll_m", "rltiles/player/base/troll_m.bmp", True),
+                     ("zruty", "rltiles/nh-mon0/z/zruty.bmp", True),
+                     ("orb", "orb.png", False),
+                     ("wall", "wallpape.jpg", False)]
+        self.spots = [('Physical', place, "orb", 0, 0) for place in placenames]
+        self.pawns = [('Physical', 'me', "troll_m"),
+                      ('Physical', 'mom', 'zruty')]
 
 default = DefaultParameters()
