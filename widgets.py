@@ -1,21 +1,6 @@
 # This file is for the controllers for the things that show up on the
 # screen when you play.
 import pyglet
-from place import Place
-from thing import Thing
-
-
-def pygletimg(tup):
-    return pyglet.image.SolidColorImagePattern(tup)
-
-
-def point_is_in(x, y, listener):
-    return x >= listener.getleft() and x <= listener.getright() \
-        and y >= listener.getbot() and y <= listener.gettop()
-
-
-def point_is_between(x, y, x1, y1, x2, y2):
-    return x >= x1 and x <= x2 and y >= y1 and y <= y2
 
 
 class Color:
@@ -26,6 +11,17 @@ class Color:
     get a particular element by name rather than number.
 
     """
+    table_schema = ("CREATE TABLE color "
+                    "(name text primary key, "
+                    "red integer not null "
+                    "check(red between 0 and 255), "
+                    "green integer not null "
+                    "check(green between 0 and 255), "
+                    "blue integer not null "
+                    "check(blue between 0 and 255), "
+                    "alpha integer default 255 "
+                    "check(alpha between 0 and 255));")
+
     def __init__(self, name, r=0, g=0, b=0, a=255):
         self.name = name
         self.red = r
@@ -33,63 +29,29 @@ class Color:
         self.blue = b
         self.alpha = a
         self.tup = (r, g, b, a)
-
-    def maybe_to_color(arg):
-        if isinstance(arg, Color):
-            return arg
-        elif type(arg) is tuple:
-            if len(arg) == 3:
-                return Color(arg[0], arg[1], arg[2], 255)
-            if len(arg) == 4:
-                return Color(*arg)
-        else:
-            return None
-
-
-class Rect:
-    """Rect(x, y, width, height, color) => rect
-
-    A rectangle with its lower-left corner at the given x and y. It
-    supports only batch rendering.
-
-    rect.addtobatch(batch, group=None) => None
-    Call this function to draw the rect.
-
-    """
-    def __init__(self, x, y, width, height, color):
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
-        self.color = Color.maybe_to_color(color)
-        self.image = pyglet.image.create(width, height,
-                                         pygletimg(color.tup))
-
-    def gettop(self):
-        return self.y + self.height
-
-    def getbot(self):
-        return self.y
-
-    def getleft(self):
-        return self.x
-
-    def getright(self):
-        return self.x + self.width
-
-    def addtobatch(self, batch, group=None):
-        self.sprite = pyglet.sprite.Sprite(self.image, self.x, self.y,
-                                           batch=batch, group=group)
+        self.pattern = pyglet.image.SolidColorImagePattern(self.tup)
 
 
 class MenuItem:
-    def __init__(self, boardname, menuname, idx, text, onclick, closer=True):
-        self.boardname = boardname
-        self.menuname = menuname
+    table_schema = ("CREATE TABLE menuitem (menu text, idx integer, "
+                    "text text, onclick text, onclick_arg text, "
+                    "closer boolean, visible boolean, interactive boolean, "
+                    "foreign key(menu) references menu(name), "
+                    "primary key(menu, idx));")
+
+    def __init__(self, board, menu, idx, text, onclick, onclick_arg,
+                 closer=True, visible=False, interactive=True):
+        self.board = board
+        self.menu = menu
         self.idx = idx
         self.text = text
-        self.onclick = onclick
+        self.oname = onclick.__name__
+        self.onclick_core = onclick
+        self.onclick_arg = onclick_arg
         self.closer = closer
+        self.visible = visible
+        self.interactive = interactive
+        self.hovered = False
 
     def __eq__(self, other):
         if isinstance(other, str):
@@ -123,71 +85,58 @@ class MenuItem:
     def __str__(self):
         return self.text
 
-    def __hash__(self):
-        return hash(self.text)
-
-    def set_pressed(self, b, m):
-        if b == pyglet.window.mouse.LEFT:
-            self.pressed = True
-
-    def unset_pressed(self, b, m):
-        if self.pressed:
-            if b == pyglet.window.mouse.LEFT:
-                self.onclick()
+    def gettop(self):
+        return self.top
 
     def getbot(self):
-        return self.y
+        return self.bot
 
-    def gettop(self):
-        if None in [self.y, self.style]:
-            return None
-        else:
-            return self.y + self.style.fontsize
+    def getleft(self):
+        return self.left
 
-    def addtobatch(self, batch, group=None):
-        if self.visible and hasattr(self, 'style'):
-            if self.hovered:
-                color = self.style.fg_active
-            else:
-                color = self.style.fg_inactive
-            return pyglet.text.Label(self.text, self.style.fontface,
-                                     self.style.fontsize, color=color,
-                                     x=self.x, y=self.y, batch=batch,
-                                     group=group)
+    def getright(self):
+        return self.right
+
+    def is_visible(self):
+        return self.menu.is_visible()
+
+    def is_interactive(self):
+        return self.menu.is_visible()  # sic
+
+    def onclick(self, button, modifiers):
+        self.onclick_core(self.onclick_arg)
 
 
 class Menu:
-    def __init__(self, name,
-                 xprop, yprop, wprop, hprop, style, visible):
+    table_schema = ("CREATE TABLE menu "
+                    "(name text primary key, "
+                    "x float not null, "
+                    "y float not null, "
+                    "width float not null, "
+                    "height float not null, "
+                    "style text default 'Default', "
+                    "visible boolean default 0, "
+                    "interactive boolean default 1, "
+                    "foreign key(style) references style(name));")
+
+    def __init__(self, board, name,
+                 left, bottom, top, right, style, visible):
+        self.board = board
         self.name = name
+        self.left = left
+        self.bottom = bottom
+        self.top = top
+        self.right = right
         self.style = style
-        self.xprop = xprop
-        self.yprop = yprop
-        self.wprop = wprop
-        self.hprop = hprop
-        # if xprop < 0.0:  # place lower-left corner (100*|xprop|)% from
-        #                  # the right of the window
-        #     self.x = self.wf.window.width + (self.wf.window.width * xprop)
-        # else:  # place lower-left corner (100*|xprop|)% from the left
-        #        # of the window
-        #     self.x = self.wf.window.width * xprop
-        # if yprop < 0.0:  # place lower-left corner (100*|yprop|)% from
-        #                  # the top of the window
-        #     self.y = self.wf.window.height + (self.wf.window.height * yprop)
-        # else:  # place lower-left corner (100*|yprop|)% from the
-        #        # bottom of the window
-        #     self.y = self.wf.window.height * yprop
-        # self.width = self.wf.window.width * abs(wprop)
-        # self.height = self.wf.window.height * abs(hprop)
-        # if wprop < 0.0:  # width extends to the left
-        #     self.y -= self.width
-        # if hprop < 0.0:  # height extends downward
-        #     self.x -= self.height
         self.items = []
-        # self.rect = Rect(self.x, self.y, self.width, self.height,
-        #                  self.style.bgcolor)
         self._scrolled_to = 0
         self.visible = visible
+        self.interactive = True
+        self.hovered = False
+        # In order to actually draw these things you need to give them
+        # an attribute called window, and it should be a window of the
+        # pyglet kind. It isn't in the constructor because that would
+        # make loading inconvenient.
 
     def __getitem__(self, i):
         return self.items.__getitem__(i)
@@ -195,60 +144,32 @@ class Menu:
     def __delitem__(self, i):
         return self.items.__delitem__(i)
 
-    def show(self):
-        self.visible = True
-        self.wf.clickables.append(self)
-        self.wf.hoverables.append(self)
-
-    def hide(self):
-        self.visible = False
-        self.wf.clickables.remove(self)
-        self.wf.hoverables.remove(self)
-
     def getstyle(self):
         return self.style
 
     def getleft(self):
-        return self.x
+        return int(self.left * self.window.width)
 
     def getbot(self):
-        return self.y
-
-    def getheight(self):
-        return self.height
+        return int(self.bottom * self.window.height)
 
     def gettop(self):
-        return self.y + self.height
-
-    def getwidth(self):
-        return self.width
+        return int(self.top * self.window.height)
 
     def getright(self):
-        return self.x + self.width
+        return int(self.right * self.window.width)
 
-    def addtobatch(self, batch, menugroup, labelgroup, start=0):
-        if not self.visible:
-            return []
-        drawn = [self.getrect().addtobatch(batch, menugroup)]
-        items_height = 0
-        draw_until = start
-        while items_height < self.getheight() and len(self.items) > draw_until:
-            items_height += self.style.fontsize + self.style.spacing
-            draw_until += 1
-        prev_height = self.gettop()
-        for item in self.items:
-            item.top = prev_height - self.style.spacing
-            item.bot = prev_height - self.style.spacing - self.style.fontsize
-            item.x = self.getleft()
-            item.y = item.bot
-            prev_height -= self.style.fontsize + self.style.spacing
-        i = start
-        while i < draw_until:
-            drawing = self.items[i]
-            drawing.show()
-            drawn.append(drawing.addtobatch(batch, labelgroup))
-            i += 1
-        return drawn
+    def getwidth(self):
+        return int((self.right - self.left) * self.window.width)
+
+    def getheight(self):
+        return int((self.top - self.bottom) * self.window.height)
+
+    def is_visible(self):
+        return self.visible
+
+    def is_interactive(self):
+        return self.interactive
 
 
 class Spot:
@@ -258,12 +179,22 @@ class Spot:
     place; at the given x and y coordinates on the screen; in the
     given graph of Spots. The Spot will be magically connected to the other
     Spots in the same way that the underlying Places are connected."""
-    def __init__(self, dimension, place, img, x, y):
+    table_schema = ("CREATE TABLE spot "
+                    "(dimension, place, img, x, y, "
+                    "visible boolean, interactive boolean, "
+                    "foreign key(dimension, place) "
+                    "references place(dimension, name), "
+                    "foreign key(img) references img(name), "
+                    "primary key(dimension, place));")
+
+    def __init__(self, dimension, place, img, x, y, visible, interactive):
         self.place = place
         self.x = x
         self.y = y
         self.r = 8
         self.img = img
+        self.visible = visible
+        self.interactive = interactive
 
     def __str__(self):
         coords = "(%i,%i)" % (self.x, self.y)
@@ -290,6 +221,15 @@ class Spot:
     def __iter__(self):
         return iter([self.img, self.getleft(), self.getbot()])
 
+    def is_visible(self):
+        return self.visible
+
+    def is_interactive(self):
+        return self.interactive
+
+    def onclick(self, button, modifiers):
+        pass
+
 
 class Pawn:
     """A token to represent something that moves about between Places.
@@ -306,27 +246,89 @@ class Pawn:
     nebulous dimension between Places.
 
     """
-    # Coordinates should really be relative to the Board and not the
-    # uh, canvas? is that what they are called in pyglet?
-    def __init__(self, dim, thing, place, img):
-        self.dimension = dim
+    table_schema = ("CREATE TABLE pawn "
+                    "(dimension, thing, img, visible, interactive, "
+                    "foreign key(img) references img(name), "
+                    "foreign key(dimension, thing) "
+                    "references thing(dimension, name), "
+                    "primary key(dimension, thing));")
+
+    def __init__(self, board, thing, img, visible, interactive):
+        self.board = board
         self.thing = thing
         self.img = img
-        self.place = place
-        self.visible = False
+        self.visible = visible
+        self.interactive = interactive
+        self.hovered = False
 
-    def addtobatch(self, batch, group=None):
-        return pyglet.sprite.Sprite(self.img, self.x, self.y,
-                                    batch=batch, group=group)
+    def getcoords(self):
+        # Assume I've been provided a spotdict. Use it to get the
+        # spot's x and y, as well as that of the spot for the next
+        # step on my thing's journey. If my thing doesn't have a
+        # journey, return the coords of the spot. If it does, return a
+        # point between the start and end spots in proportion to the
+        # journey's progress. If there is no end spot, behave as if
+        # there's no journey.
+        #
+        # I can't assume that img is an actual image because the
+        # loader instantiates things before assigning them data that's
+        # not strings or numbers. Calculate self.rx to save some
+        # division.
+        if not hasattr(self, 'rx'):
+            self.rx = self.img.width / 2
+        if hasattr(self.thing, 'journey') and\
+           self.thing.journey.stepsleft() > 0:
+            j = self.thing.journey
+            port = j.getstep(0)
+            start = port.orig.spot
+            end = port.dest.spot
+            hdist = end.x - start.x
+            vdist = end.y - start.y
+            p = j.progress
+            x = start.x + hdist * p
+            y = start.y + vdist * p
+            return (x, y)
+        else:
+            ls = self.thing.location.spot
+            return (ls.x, ls.y)
+
+    def getleft(self):
+        return self.getcoords()[0] - self.rx
+
+    def getright(self):
+        return self.getcoords()[0] + self.rx
+
+    def gettop(self):
+        return self.getcoords()[1] + self.img.height
+
+    def getbot(self):
+        return self.getcoords()[1]
+
+    def is_visible(self):
+        return self.visible
+
+    def is_interactive(self):
+        return self.interactive
+
+    def onclick(self, button, modifiers):
+        pass
 
 
 class Board:
-    def __init__(self, dimension, width, height, texture,
+    table_schema = ("CREATE TABLE board "
+                    "(dimension primary key, "
+                    "width integer, "
+                    "height integer, "
+                    "wallpaper, "
+                    "foreign key(dimension) references dimension(name), "
+                    "foreign key(wallpaper) references image(name));")
+
+    def __init__(self, dimension, width, height, image,
                  spots=[], pawns=[], menus=[]):
         self.dimension = dimension
         self.width = width
         self.height = height
-        self.tex = texture
+        self.img = image
         self.spots = spots
         self.pawns = pawns
         self.menus = menus
@@ -348,6 +350,20 @@ class Board:
 
 
 class Style:
+    table_schema = ("CREATE TABLE style "
+                    "(name text primary key, "
+                    "fontface text not null, "
+                    "fontsize integer not null, "
+                    "spacing integer default 6, "
+                    "bg_inactive text not null, "
+                    "bg_active text not null, "
+                    "fg_inactive text not null, "
+                    "fg_active text not null, "
+                    "foreign key(bg_inactive) references color(name), "
+                    "foreign key(bg_active) references color(name), "
+                    "foreign key(fg_inactive) references color(name), "
+                    "foreign key(fg_active) references color(name));")
+
     def __init__(self, name, fontface, fontsize, spacing,
                  bg_inactive, bg_active, fg_inactive, fg_active):
         self.name = name
@@ -360,222 +376,5 @@ class Style:
         self.fg_active = fg_active
 
 
-class WidgetFactory:
-    # One window, batch, and WidgetFactory per board.
-    def __init__(self, db, gamestate, boardname, window, batch):
-        self.db = db
-        self.board = self.db.getboard(boardname)
-        self.gamestate = gamestate
-        self.window = window
-        self.batch = batch
-        self.bggroup = pyglet.graphics.Group()
-        self.menugroup = pyglet.graphics.Group()
-        self.labelgroup = pyglet.graphics.Group()
-        self.pawngroup = pyglet.graphics.Group()
-        self.spotgroup = pyglet.graphics.Group()
-        self.menusmade = []
-        self.labelsmade = []
-        self.pawnsmade = []
-        self.spotsmade = []
-        self.hoverables = []
-        self.clickables = []
-        self.draggables = []
-        self.keyboard_listeners = []
-        self.delay = 0
-        self.pressed = None
-        self.hovered = None
-        self.grabbed = None
-
-    def rmlistener(self, listener):
-        self.hoverables.remove(listener)
-        self.clickables.remove(listener)
-        self.draggables.remove(listener)
-        self.keyboard_listeners.remove(listener)
-
-    def movepawns(self, ts, freq):
-        self.delay += ts - freq
-        # when the cumulative delay is longer than the time between frames,
-        # skip a frame to make up for it
-        reps = 1
-        while self.delay > freq:
-            reps += 1
-            self.delay -= freq
-        for pawn in self.pawnsmade:
-            pawn.move(reps)
-
-    def on_draw(self):
-        drawn = [self.board.addtobatch(self.batch, self.bggroup)]
-        for menu in self.menusmade:
-            drawn.append(menu.addtobatch(self.batch, self.menugroup))
-        for label in self.labelsmade:
-            drawn.append(label.addtobatch(self.batch, self.labelgroup))
-        for pawn in self.pawnsmade:
-            drawn.append(pawn.addtobatch(self.batch, self.pawngroup))
-        for spot in self.spotsmade:
-            drawn.append(spot.addtobatch(self.batch, self.spotgroup))
-
-    def on_key_press(self, sym, mods):
-        for listener in self.keyboard_listeners:
-            if sym in listener.listen_to_keys:
-                if mods & listener.listen_to_mods > 0:
-                    listener.keypress(sym, mods)
-        # self.mouse.left = button == pyglet.window.mouse.LEFT
-        # self.mouse.middle = button == pyglet.window.mouse.MIDDLE
-        # self.mouse.right = button == pyglet.window.mouse.RIGHT
-        # self.key.shift = modifiers & pyglet.window.key.MOD_SHIFT
-        # self.key.ctrl = modifiers & pyglet.window.key.MOD_CTRL
-        # self.key.meta = (modifiers & pyglet.window.key.MOD_ALT or
-        #                  modifiers & pyglet.window.key.MOD_OPTION)
-
-    def on_mouse_motion(self, x, y, dx, dy):
-        for listener in self.hoverables:
-            if point_is_in(x, y, listener):
-                listener.set_hover()
-                self.hover = listener
-                return
-        if self.hover is not None:
-            self.hover.unset_hover()
-            self.hover = None
-
-    def on_mouse_press(self, x, y, button, modifiers):
-        for listener in self.clickables:
-            if button in listener.listen_to_buttons:
-                if point_is_in(x, y, listener):
-                    listener.set_pressed(button, modifiers)
-                    self.pressed = listener
-                    return
-        for listener in self.draggables:
-            if button in listener.listen_to_buttons:
-                if point_is_in(x, y, listener):
-                    listener.set_grabbed(button, modifiers)
-                    self.grabbed = listener
-                    return
-
-    def on_mouse_release(self, x, y, button, modifiers):
-        if self.pressed is not None:
-            self.pressed.unset_pressed(button, modifiers)
-            self.pressed = None
-
-    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
-        if self.grabbed is not None:
-            self.grabbed.unset_grabbed(buttons, modifiers)
-            self.grabbed = None
-
-    def extract_name(it, clas):
-        if type(it) is str:
-            return it
-        elif isinstance(it, clas):
-            return it.name
-        else:
-            raise TypeError("I need a %s or the name of one" % str(clas))
-
-    def open_spot(self, place_or_name):
-        if type(place_or_name) is str:
-            s = self.db.getspot(place_or_name)
-        elif isinstance(place_or_name, Place):
-            s = self.db.getspot(place_or_name.name)
-        else:
-            raise TypeError("I need a place or the name of one.")
-        self.spotsmade.append(s)
-        return s
-
-    def close_spot(self, name_or_spot):
-        if type(name_or_spot) is str:
-            spot = self.db.getspot(name_or_spot)
-            name = name_or_spot
-        elif isinstance(name_or_spot, Spot):
-            spot = name_or_spot
-            name = name_or_spot.place.name
-        elif isinstance(name_or_spot, Place):
-            spot = self.db.getspot(name_or_spot.name)
-            name = name_or_spot.name
-        else:
-            raise TypeError("I need a name of a place, a place, "
-                            "or the spot that represents it")
-        self.db.savespot(spot)
-        del self.db.spotmap[name]
-        self.rmlistener(spot)
-        self.spotsmade.remove(spot)
-
-    def open_menu(self, name):
-        menu = self.db.getmenu(name)
-        self.menusmade.append(menu)
-        return menu
-
-    def close_menu(self, name_or_menu):
-        if type(name_or_menu) is str:
-            menu = self.db.getmenu(name_or_menu)
-            name = name_or_menu
-        elif isinstance(name_or_menu, Menu):
-            menu = name_or_menu
-            name = name_or_menu.name
-        else:
-            raise TypeError("I need a menu's name or a menu proper")
-        # saving the opened-ness of windows when?
-        self.db.savemenu(menu)
-        del self.db.menumap[name]
-        self.rmlistener(menu)
-        self.menusmade.remove(menu)
-
-    def open_pawn(self, thing_or_name):
-        if type(thing_or_name) is str:
-            thingn = thing_or_name
-        elif isinstance(thing_or_name, Thing):
-            thingn = thing_or_name.name
-        else:
-            raise TypeError("I need a thing or the name of one")
-        pawn = self.db.getpawn(thingn, self.board)
-        self.pawnsmade.append(pawn)
-        return pawn
-
-    def close_pawn(self, thing_or_pawn_or_name):
-        topor = thing_or_pawn_or_name
-        if type(topor) is str:
-            pawn = self.db.getpawn(topor, self.board)
-            name = topor
-        elif isinstance(topor, Thing):
-            pawn = self.db.getpawn(topor.name, self.board)
-            name = topor.name
-        elif isinstance(topor, Pawn):
-            pawn = topor
-            name = topor.name
-        else:
-            raise TypeError("I need a thing, a pawn, or a name")
-        self.db.savepawn(pawn)
-        del self.db.pawnmap[name]
-        self.rmlistener(pawn)
-        self.pawnsmade.remove(pawn)
-
-    def show_pawn(self, pawn):
-        pawn.visible = True
-        self.clickables.append(pawn)
-        self.draggables.append(pawn)
-
-    def hide_pawn(self, pawn):
-        pawn.visible = False
-        self.clickables.remove(pawn)
-        self.draggables.remove(pawn)
-
-    def toggle_pawn(self, pawn):
-        if pawn.visible:
-            self.hide_pawn(pawn)
-        else:
-            self.show_pawn(pawn)
-
-    def show_menu_item(self, mi):
-        if None in [mi.y, mi.fontsize]:
-            raise Exception("I can't show the label %s without knowing"
-                            " where it is, first." % mi.text)
-        else:
-            self.clickables.append(mi)
-            mi.visible = True
-
-    def hide_menu_item(self, mi):
-        mi.visible = False
-        self.clickables.remove(mi)
-
-    def toggle_menu_item(self, mi):
-        if mi.visible:
-            self.hide_menu_item(mi)
-        else:
-            self.show_menu_item(mi)
+classes = [Color, MenuItem, Menu, Spot, Pawn, Board, Style]
+table_schemata = [clas.table_schema for clas in classes]

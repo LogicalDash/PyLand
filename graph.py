@@ -27,6 +27,22 @@ class Journey:
     a Portal at a time, but Journey handles that case anyhow.
 
     """
+    table_schema = ("CREATE TABLE journey_step "
+                    "(dimension, "
+                    "thing, "
+                    "idx integer, "
+                    "destination, "
+                    "portal, "
+                    "progress float, "
+                    "foreign key(dimension, thing) "
+                    "references thing(dimension, name), "
+                    "foreign key(dimension, portal) "
+                    "references portal(dimension, name), "
+                    "foreign key(dimension, destination) "
+                    "references place(dimension, name), "
+                    "check(progress>=0.0), "
+                    "check(progress<1.0), "
+                    "primary key(dimension, thing, idx));")
 
     def __init__(self, thing, dest, steplist):
         self.steplist = steplist
@@ -116,6 +132,20 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
+    table_schema = ("CREATE TABLE portal "
+                    "(dimension text, "
+                    "name text, "
+                    "from_place text, "
+                    "to_place text, "
+                    "foreign key(dimension, name) "
+                    "references item(dimension, name), "
+                    "foreign key(dimension, from_place) "
+                    "references place(dimenison, name), "
+                    "foreign key(dimension, to_place) "
+                    "references place(dimension, name), "
+                    "primary key(dimension, name), "
+                    "check(from_place<>to_place));")
+
     def __init__(self, dimension, name, origin, destination, attributes={}):
         self.dimension = dimension
         self.name = name
@@ -144,7 +174,7 @@ class Portal:
     def admits(self, traveler):
         return True
 
-    def is_passable_by(self, traveler):
+    def is_now_passable_by(self, traveler):
         return self.isPassableNow() and self.admits(traveler)
 
     def get_dest(self):
@@ -164,6 +194,12 @@ class Portal:
 
 
 class Place:
+    table_schema = ("CREATE TABLE place "
+                    "(dimension text, "
+                    "name text, "
+                    "foreign key(dimension, name) "
+                    "references item(dimension, name));")
+
     def __init__(self, dimension, name, contents=[], portals=[]):
         self.name = name
         self.dimension = dimension
@@ -194,6 +230,9 @@ class Place:
 
 
 class Dimension:
+    table_schema = ("CREATE TABLE dimension "
+                    "(name text primary key);")
+
     def __init__(self, name, places=[], portals=[]):
         self.name = name
         self.places = places
@@ -232,7 +271,10 @@ class Dimension:
 
     def get_igraph_graph(self):
         if self.igg is None:
-            self.igg =  igraph.Graph(edges=self.get_edges(), directed=True,
-                                     vertex_attrs=self.get_vertex_atts(),
-                                     edge_attrs=self.get_edge_atts())
+            self.igg = igraph.Graph(edges=self.get_edges(), directed=True,
+                                    vertex_attrs=self.get_vertex_atts(),
+                                    edge_attrs=self.get_edge_atts())
         return self.igg
+
+classes = [Journey, Portal, Place, Dimension]
+table_schemata = [clas.table_schema for clas in classes]

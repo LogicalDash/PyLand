@@ -2,6 +2,11 @@ from attrcheck import AttrCheck
 
 
 class Thing:
+    table_schema = ("CREATE TABLE thing "
+                    "(dimension, name text, "
+                    "foreign key(dimension, name) "
+                    "references item(dimension, name));")
+
     def __init__(self, dimension, name, location, contents=[]):
         self.dimension = dimension
         self.name = name
@@ -65,3 +70,8 @@ class Thing:
 
 # TODO: methods of Thing to get instances of those classes and inspect
 # items who want to enter to make sure they pass.
+#
+# TODO: subclasses of thing to differentiate between things and other things
+
+classes = [Thing]
+table_schemata = [clas.table_schema for clas in classes]

@@ -4,7 +4,9 @@
 # object class. It doesn't make sense to have an update method for
 # Place, for instance, since the table only records that a place
 # exists by a certain name.
-import sqlite3, sys, os
+import sqlite3
+import sys
+import os
 from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
 from graph import Journey, Dimension, Place, Portal
@@ -51,7 +53,7 @@ class Database:
                     'float': float,
                     'bool': bool}
         self.func = xfuncs
-        self.imgs2load = []
+        self.imgs2load = set()
 
     def __del__(self):
         self.readcursor.close()
@@ -77,10 +79,11 @@ class Database:
     def initialized(self):
         try:
             for tab in ["thing", "place", "attribute", "img"]:
-                self.readcursor.execute("select * from ? limit 1;", (tab,))
-        except:
+                self.readcursor.execute("select count(*) from %s limit 1"
+                                        % (tab,))
+            return True
+        except sqlite3.OperationalError:
             return False
-        return True
 
     def alter(self, obj):
         "Pass an object here to have the database remember it, both in the "
@@ -145,14 +148,21 @@ class Database:
         self._insert_all("menu", default.menus)
         self._insert_all("board", default.boards)
         self._insert_all("boardmenu", default.boardmenu)
+        # functions
+        for func in default.funcs:
+            self.xfunc(func)
+
+    def xfunc(self, func):
+        self.func[func.__name__] = func
 
     def load_board(self, dimension):
+        self.imgs2load = set()
         qrystr = "SELECT width, height, wallpaper "\
                  "FROM board WHERE dimension=?;"
         qrytup = (dimension,)
         self.readcursor.execute(qrystr, qrytup)
         (w, h, texname) = self.readcursor.fetchone()
-        self.imgs2load = [texname]
+        self.imgs2load.add(texname)
         self.load_places_in_dimension(dimension)
         places = self.placedict[dimension].values()
         self.load_things_in_dimension(dimension)
@@ -196,40 +206,68 @@ class Database:
             journey.thing = self.thingdict[dimension][journey.thing]
             journey.dest = self.placedict[dimension][journey.dest]
         spots = self.spotdict[dimension].values()
+        places = self.placedict[dimension].values()
+        portals = self.portaldict[dimension].values()
+        things = self.thingdict[dimension].values()
         pawns = self.pawndict[dimension].values()
-        menus = self.menudict.values()
+        menus = self.menudict[dimension].values()
         self.load_imgs()
-        for spot in spots:
-            spot.img = self.imgdict[spot.img]
-        for pawn in pawns:
-            pawn.img = self.imgdict[pawn.img]
         texture = self.imgdict[texname]
         board = Board(dimension, w, h, texture, spots, pawns, menus)
+        for spot in spots:
+            spot.img = self.imgdict[spot.img]
+            spot.place = self.placedict[dimension][spot.place]
+            spot.board = board
+        for pawn in pawns:
+            pawn.img = self.imgdict[pawn.img]
+            pawn.thing = self.thingdict[dimension][pawn.thing]
+            pawn.board = board
+        for place in places:
+            place.spot = self.spotdict[dimension][place.name]
+        for portal in portals:
+            portal.orig = self.placedict[dimension][portal.orig]
+            portal.dest = self.placedict[dimension][portal.dest]
+        for thing in things:
+            if thing in self.pawndict[dimension]:
+                thing.pawn = self.pawndict[dimension][thing.name]
+            else:
+                # Not all things show up like pawns on the board.
+                # Some of them only show up in your inventory, or the
+                # contents listing of a place.
+                thing.pawn = None
+        for menu in self.menudict[dimension].values():
+            menu.board = board
+            for menuitem in menu.items:
+                menuitem.board = board
         self.boarddict[dimension] = board
+        return board
 
     def load_menus_for_board(self, board):
-        qrystr = "SELECT menu FROM boardmenu WHERE board=?;"
+        qrystr = "SELECT DISTINCT menu FROM boardmenu WHERE board=?;"
         self.readcursor.execute(qrystr, (board,))
         menunames = [row[0] for row in self.readcursor]
         qm = ["?"] * len(menunames)
-        qrystr = "SELECT name, x, y, width, height, style, visible "\
+        qrystr = "SELECT name, x, y, width, height, style, "\
+                 "visible, interactive "\
                  "FROM menu WHERE name IN (" + ", ".join(qm) + ");"
         self.readcursor.execute(qrystr, menunames)
         menurows = self.readcursor.fetchall()
-        stylenames = [row[5] for row in menurows]
+        stylenames = set([row[5] for row in menurows])
         qm = ["?"] * len(stylenames)
         qrystr = "SELECT name, fontface, fontsize, spacing, "\
                  "bg_inactive, bg_active, fg_inactive, fg_active "\
                  "FROM style WHERE name IN (" + ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, stylenames)
+        qrylst = list(stylenames)
+        self.readcursor.execute(qrystr, qrylst)
         stylerows = self.readcursor.fetchall()
-        colornames = []
+        colornames = set()
         for row in stylerows:
-            colornames.extend(iter(row[4:]))
-        qm = ["?"] * len(colornames)
+            colornames.update(row[4:])
+        qrylst = list(colornames)
+        qm = ["?"] * len(qrylst)
         qrystr = "SELECT name, red, green, blue, alpha FROM color "\
                  "WHERE name IN (" + ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, colornames)
+        self.readcursor.execute(qrystr, qrylst)
         for row in self.readcursor:
             color = Color(*row)
             self.colordict[row[0]] = color
@@ -242,46 +280,59 @@ class Database:
                           self.colordict[fg_i],
                           self.colordict[fg_a])
             self.styledict[name] = style
-        menunames = []
+        menunames = set()
+        if board not in self.menudict:
+            self.menudict[board] = {}
         for row in menurows:
-            (name, x, y, w, h, sty, vis) = row
-            menunames.append(name)
+            (name, x, y, w, h, sty, vis, inter) = row
+            menunames.add(name)
             style = self.styledict[sty]
-            menu = Menu(name, x, y, w, h, style, vis)
-            self.menudict[name] = menu
-        self.load_items_in_menus(menunames)
+            menu = Menu(board, name, x, y, w, h, style, vis)
+            self.menudict[board][name] = menu
+        self.load_items_in_menus(board, menunames)
 
-    def load_items_in_menus(self, names):
-        qm = ["?"] * len(names)
-        qrystr = "SELECT menuitem.menu, idx, text, onclick, closer "\
+    def load_items_in_menus(self, board, names):
+        qrylst = list(names)
+        qm = ["?"] * len(qrylst)
+        qrystr = "SELECT menuitem.menu, idx, text, onclick, "\
+                 "closer, visible, interactive "\
                  "FROM menuitem JOIN boardmenu ON "\
                  "menuitem.menu=boardmenu.menu "\
                  "WHERE menuitem.menu IN (" + ", ".join(qm) + ");"
-        self.readcursor.execute(qrystr, names)
-        md = self.menudict
-        mid = self.menuitemdict
+        self.readcursor.execute(qrystr, qrylst)
+        md = self.menudict[board]
+        if board not in self.menuitemdict:
+            self.menuitemdict[board] = {}
+        mid = self.menuitemdict[board]
         for row in self.readcursor:
-            (menun, idx, text, fname, closer) = row
+            (menun, idx, text, fname, closer, visible, interactive) = row
             onclick = self.func[fname]
-            mi = MenuItem(menun, idx, text, onclick, closer)
             menu = md[menun]
+            mi = MenuItem(board, menu, idx, text, onclick,
+                          closer, visible, interactive)
+            if not mi.visible:
+                continue
             while len(menu.items) <= idx:
                 menu.items.append(None)
             menu.items[idx] = mi
             if menun not in mid:
                 mid[menun] = {}
             mid[menun][idx] = mi
+        for menu in md:
+            for item in menu.items:
+                if item is None:
+                    del item
 
     def load_places_in_dimension(self, dimension):
         qrystr = "SELECT name FROM place WHERE dimension=?;"
         self.readcursor.execute(qrystr, (dimension,))
-        pd = self.placedict
-        if dimension not in pd:
-            pd[dimension] = {}
+        if dimension not in self.placedict:
+            self.placedict[dimension] = {}
+        pd = self.placedict[dimension]
         for row in self.readcursor:
             name = row[0]
             place = Place(dimension, name)
-            pd[dimension][name] = place
+            pd[name] = place
 
     def load_things_in_dimension(self, dimension):
         qrystr = "SELECT thing, place FROM location WHERE dimension=?;"
@@ -339,44 +390,43 @@ class Database:
             contents[dimension][outside].append(inside)
 
     def load_spots_for_board(self, dimension):
-        qrystr = "SELECT place, img, x, y "\
+        qrystr = "SELECT place, img, x, y, visible, interactive "\
                  "FROM spot WHERE dimension=?;"
         self.readcursor.execute(qrystr, (dimension,))
-        sd = self.spotdict
-        if dimension not in sd:
-            sd[dimension] = {}
+        if dimension not in self.spotdict:
+            self.spotdict[dimension] = {}
+        sd = self.spotdict[dimension]
         for row in self.readcursor:
-            (place, img, x, y) = row
-            self.imgs2load.append(img)
-            spot = Spot(dimension, place, img, x, y)
-            sd[dimension][place] = spot
+            (place, img, x, y, vis, inter) = row
+            self.imgs2load.add(img)
+            spot = Spot(dimension, place, img, x, y, vis, inter)
+            sd[place] = spot
 
     def load_pawns_for_board(self, dimension):
-        qrystr = "SELECT dimension, thing, img "\
+        qrystr = "SELECT dimension, thing, img, visible, interactive "\
                  "FROM pawn WHERE dimension=?;"
         self.readcursor.execute(qrystr, (dimension,))
-        pd = self.pawndict
-        if dimension not in pd:
-            pd[dimension] = {}
+        if dimension not in self.pawndict:
+            self.pawndict[dimension] = {}
+        pd = self.pawndict[dimension]
         for row in self.readcursor:
-            (dimension, thing, img) = row
-            self.imgs2load.append(img)
-            place = self.thingdict[dimension][thing].location
-            pawn = Pawn(dimension, thing, place, img)
-            pd[dimension][thing] = pawn
+            (dimension, thing, img, vis, inter) = row
+            self.imgs2load.add(img)
+            pawn = Pawn(dimension, thing, img, vis, inter)
+            pd[thing] = pawn
 
     def load_imgs(self):
         qm = ["?"] * len(self.imgs2load)
         qrystr = "SELECT name, path, rltile FROM img WHERE name IN (" +\
                  ", ".join(qm) + ");"
         self.readcursor.execute(qrystr, self.imgs2load)
-        regular = []
-        rltile = []
+        regular = set()
+        rltile = set()
         for row in self.readcursor:
             if row[2]:
-                rltile.append(row)
+                rltile.add(row)
             else:
-                regular.append(row)
+                regular.add(row)
         for img in regular:
             self.load_regular_img(img[0], img[1])
         for img in rltile:
@@ -421,9 +471,3 @@ class Database:
             else:
                 journey = Journey(thing, destination, [portal])
                 self.journeydict[dimension][thing] = journey
-
-db = Database(":memory:", default.stubs)
-db.mkschema()
-db.insert_defaults()
-db.load_board('Physical')
-print db.boarddict['Physical']
