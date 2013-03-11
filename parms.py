@@ -8,10 +8,12 @@
 from widgets import table_schemata as widget_schemata
 from graph import table_schemata as graph_schemata
 from thing import table_schemata as thing_schemata
+from attributes import table_schemata as attr_schemata
 
 tables = (thing_schemata +
           graph_schemata +
           widget_schemata +
+          attr_schemata +
           ["CREATE TABLE item "
            "(dimension, name text, "
            "foreign key(dimension) references dimension(name));",
@@ -27,16 +29,6 @@ tables = (thing_schemata +
            "foreign key(dimension, container) "
            "references thing(dimension, name), "
            "primary key(dimension, contained));",
-           "CREATE TABLE attribute "
-           "(name text primary key, type text, lower, upper);",
-           "CREATE TABLE attribution "
-           "(dimension, attributed_to, attribute, value, "
-           "foreign key(dimension, attributed_to) "
-           "references item(dimension, name), "
-           "foreign key(attribute) references attribute(name));",
-           "CREATE TABLE permitted "
-           "(attribute, value, "
-           "foreign key(attribute) references attribute(name));",
            "CREATE TABLE img "
            "(name text primary key, path, rltile);",
            "CREATE TABLE boardmenu "
