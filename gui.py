@@ -1,11 +1,6 @@
 import pyglet
 from database import Database
-from parms import default
 from state import GameState
-
-
-debug_add_mi = False
-debug_draw_menu = True
 
 
 def point_is_in(x, y, listener):
@@ -21,6 +16,7 @@ class GameWindow:
     # One window, batch, and WidgetFactory per board.
     def __init__(self, db, gamestate, boardname, batch=None):
         self.db = db
+        self.db.xfunc(self.toggle_menu_visibility_by_name)
         self.gamestate = gamestate
         self.board = self.db.load_board(boardname)
         if self.board is None:
@@ -33,16 +29,6 @@ class GameWindow:
         self.menugroup = pyglet.graphics.OrderedGroup(4)
         self.labelgroup = pyglet.graphics.OrderedGroup(5)
 
-        self.last_updated = 0.0
-        self.last_drawn = -1.0
-        self.last_key_pressed = -1.0
-        self.last_mouse_moved = -1.0
-        self.last_mouse_pressed = -1.0
-        self.last_mouse_released = -1.0
-        self.last_mouse_dragged = -1.0
-        self.mouse_times = [self.last_mouse_moved, self.last_mouse_pressed,
-                            self.last_mouse_released, self.last_mouse_dragged]
-        self.draw_delay = -1.0
         self.pressed = None
         self.hovered = None
         self.grabbed = None
@@ -94,12 +80,7 @@ class GameWindow:
         for menu in self.board.menus:
             menu.window = self.window
 
-    def update(self, ts, speed):
-        self.speed = speed
-        self.last_updated += ts
-
     def on_draw(self):
-        self.last_drawn = self.last_updated
         drawn = []
         # Draw the menus first, because otherwise I have no idea where
         # their items are.
@@ -128,12 +109,8 @@ class GameWindow:
         drawn.append(self.add_board_to_batch())
         self.batch.draw()  # wasn't there something about gl_flush
 
-    def toggle_menu_by_name(self, name):
-        for menu in self.board.menus:
-            if menu.name != name:
-                menu.visible = False
-            else:
-                menu.visible = not menu.visible
+    def toggle_menu_visibility_by_name(self, name):
+        self.db.toggle_menu_visibility(self.board.dimension + '.' + name)
 
     def mouse_in(self, thingus):
         x = self.mouse_x
@@ -219,11 +196,6 @@ class GameWindow:
             color = sty.fg_active
         else:
             color = sty.fg_inactive
-        if debug_add_mi:
-            print "I'm making a label. It will say %s. "\
-                "Its color will be %s. It will be located at (%d, %d)."\
-                " Its font size will be %d." %\
-                (mi.text, repr(color.tup), mi.left, mi.bot, sty.fontsize)
         return pyglet.text.Label(mi.text, sty.fontface, sty.fontsize,
                                  color=color.tup, x=mi.left, y=mi.bot,
                                  batch=self.batch, group=self.labelgroup)
@@ -291,15 +263,12 @@ class GameWindow:
         return s
 
 
-db = Database(":memory:", default.stubs)
+db = Database(":memory:")
 db.mkschema()
-while True:
-    if db.initialized():
-        break
 db.insert_defaults()
-
 gamestate = GameState(db)
 gw = GameWindow(db, gamestate, 'Physical')
+
 
 gamespeed = 1/60.0
 

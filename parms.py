@@ -8,12 +8,12 @@
 from widgets import table_schemata as widget_schemata
 from graph import table_schemata as graph_schemata
 from thing import table_schemata as thing_schemata
-from attributes import table_schemata as attr_schemata
+from character import table_schemata as char_schemata
 
 tables = (thing_schemata +
           graph_schemata +
           widget_schemata +
-          attr_schemata +
+          char_schemata +
           ["CREATE TABLE item "
            "(dimension, name text, "
            "foreign key(dimension) references dimension(name));",
@@ -97,10 +97,10 @@ thing_menu_items = {'Custom Thing': ('new_thing', 'custom'),
                     'Decoration': ('new_thing', 'decoration'),
                     'Clothing': ('new_thing', 'clothing'),
                     'Tool': ('new_thing', 'tool')}
-main_menu_items = {'Game': ('toggle_menu_by_name', 'Game'),
-                   'Editor': ('toggle_menu_by_name', 'Editor'),
-                   'Place': ('toggle_menu_by_name', 'Place'),
-                   'Thing': ('toggle_menu_by_name', 'Thing')}
+main_menu_items = {'Game': ('toggle_menu_visibility_by_name', 'Game'),
+                   'Editor': ('toggle_menu_visibility_by_name', 'Editor'),
+                   'Place': ('toggle_menu_visibility_by_name', 'Place'),
+                   'Thing': ('toggle_menu_visibility_by_name', 'Thing')}
 
 
 solarized_colors = {'base03': (0x00, 0x2b, 0x36),
@@ -160,7 +160,7 @@ class DefaultParameters:
 
     def __init__(self):
         self.dimensions = [("Physical")]
-        self.tabs = tabs
+        self.tables = tables
         self.funcs = funcs
         # I'm going to have the menu bar on the left of the
         # screen. For convenience.
@@ -173,27 +173,32 @@ class DefaultParameters:
         self.menuitems = []
         i = 0
         for item in game_menu_items.iteritems():
-            self.menuitems.append(('Game', i, item[0], item[1],
-                                   True, False, False))
+            self.menuitems.append(('Game', i,
+                                   item[0], item[1][0], item[1][1],
+                                   True, False, True))
             i += 1
         i = 0
         for item in editor_menu_items.iteritems():
-            self.menuitems.append(('Editor', i, item[0], item[1],
-                                   True, False, False))
+            self.menuitems.append(('Editor', i, item[0],
+                                   item[1][0], item[1][1],
+                                   True, False, True))
             i += 1
         i = 0
         for item in place_menu_items.iteritems():
-            self.menuitems.append(('Place', i, item[0], item[1],
-                                   True, False, False))
+            self.menuitems.append(('Place', i,
+                                   item[0], item[1][0], item[1][1],
+                                   True, False, True))
             i += 1
         i = 0
         for item in thing_menu_items.iteritems():
-            self.menuitems.append(('Thing', i, item[0], item[1],
-                                   True, False, False))
+            self.menuitems.append(('Thing', i,
+                                   item[0], item[1][0], item[1][1],
+                                   True, False, True))
             i += 1
         i = 0
         for item in main_menu_items.iteritems():
-            self.menuitems.append(('Main', i, item[0], item[1],
+            self.menuitems.append(('Main', i,
+                                   item[0], item[1][0], item[1][1],
                                    False, True, True))
             i += 1
 
@@ -260,7 +265,8 @@ class DefaultParameters:
                      ("zruty", "rltiles/nh-mon0/z/zruty.bmp", True),
                      ("orb", "orb.png", False),
                      ("wall", "wallpape.jpg", False)]
-        self.spots = [('Physical', place, "orb", 0, 0, True, True) for place in placenames]
+        self.spots = [('Physical', place, "orb", 0, 0, True, True)
+                      for place in placenames]
         self.pawns = [('Physical', 'me', "troll_m", True, True),
                       ('Physical', 'mom', 'zruty', True, True)]
 

@@ -45,7 +45,6 @@ class MenuItem:
         self.menu = menu
         self.idx = idx
         self.text = text
-        self.oname = onclick.__name__
         self.onclick_core = onclick
         self.onclick_arg = onclick_arg
         self.closer = closer
@@ -105,6 +104,9 @@ class MenuItem:
 
     def onclick(self, button, modifiers):
         self.onclick_core(self.onclick_arg)
+
+    def toggle_visibility(self):
+        self.visible = not self.visible
 
 
 class Menu:
@@ -170,6 +172,11 @@ class Menu:
 
     def is_interactive(self):
         return self.interactive
+
+    def toggle_visibility(self):
+        self.visible = not self.visible
+        for item in self.items:
+            item.toggle()
 
 
 class Spot:
