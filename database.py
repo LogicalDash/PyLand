@@ -214,10 +214,12 @@ class Database:
         board = Board(dimension, w, h, texture, spots, pawns, menus)
         for spot in spots:
             spot.img = self.imgdict[spot.img]
+            spot.r = spot.img.width / 2
             spot.place = self.placedict[dimension][spot.place]
             spot.board = board
         for pawn in pawns:
             pawn.img = self.imgdict[pawn.img]
+            pawn.r = pawn.img.width / 2
             pawn.thing = self.thingdict[dimension][pawn.thing]
             pawn.board = board
         for place in places:
@@ -241,6 +243,7 @@ class Database:
                 else:
                     menuitem.board = board
         self.boarddict[dimension] = board
+        self.dimdict[dimension] = Dimension(dimension, places, portals)
         return board
 
     def load_menus_for_board(self, board):
@@ -295,11 +298,9 @@ class Database:
     def load_items_in_menus(self, board, names):
         qrylst = list(names)
         qm = ["?"] * len(qrylst)
-        qrystr = "SELECT menuitem.menu, idx, text, onclick, "\
-                 "onclick_arg, closer, visible, interactive "\
-                 "FROM menuitem JOIN boardmenu ON "\
-                 "menuitem.menu=boardmenu.menu "\
-                 "WHERE menuitem.menu IN (" + ", ".join(qm) + ");"
+        qrystr = ("SELECT menu, idx, text, onclick, onclick_arg, closer, "
+                  "visible, interactive FROM menuitem WHERE menu IN ("
+                  + ", ".join(qm) + ");")
         self.c.execute(qrystr, qrylst)
         md = self.menudict[board]
         if board not in self.menuitemdict:

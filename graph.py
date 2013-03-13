@@ -237,7 +237,6 @@ class Dimension:
         self.name = name
         self.places = places
         self.portals = portals
-        self.igg = None
 
     def add_place(self, place):
         self.places.append(place)
@@ -270,11 +269,12 @@ class Dimension:
         return r
 
     def get_igraph_graph(self):
-        if self.igg is None:
-            self.igg = igraph.Graph(edges=self.get_edges(), directed=True,
-                                    vertex_attrs=self.get_vertex_atts(),
-                                    edge_attrs=self.get_edge_atts())
-        return self.igg
+        return igraph.Graph(edges=self.get_edges(), directed=True,
+                            vertex_attrs=self.get_vertex_atts(),
+                            edge_attrs=self.get_edge_atts())
+
+    def get_igraph_layout(self, layout_type):
+        return self.get_igraph_graph().layout(layout=layout_type)
 
 classes = [Journey, Portal, Place, Dimension]
 table_schemata = [clas.table_schema for clas in classes]

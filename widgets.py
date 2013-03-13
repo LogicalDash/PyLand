@@ -50,6 +50,7 @@ class MenuItem:
         self.closer = closer
         self.visible = visible
         self.interactive = interactive
+        self.height = menu.style.fontsize + menu.style.spacing
         self.hovered = False
 
     def __eq__(self, other):
@@ -84,29 +85,34 @@ class MenuItem:
     def __str__(self):
         return self.text
 
-    def gettop(self):
-        return self.top
-
-    def getbot(self):
-        return self.bot
-
     def getleft(self):
+        if not hasattr(self, 'left'):
+            self.left = self.menu.getleft() + self.menu.style.spacing
         return self.left
 
     def getright(self):
+        if not hasattr(self, 'right'):
+            self.right = self.menu.getright() - self.menu.style.spacing
         return self.right
 
-    def is_visible(self):
-        return self.menu.is_visible()
+    def gettop(self):
+        if not hasattr(self, 'top'):
+            self.top = (self.menu.gettop() - self.menu.style.spacing -
+                        (self.idx * self.height))
+        return self.top
 
-    def is_interactive(self):
-        return self.menu.is_visible()  # sic
+    def getbot(self):
+        if not hasattr(self, 'bot'):
+            self.bot = self.gettop() - self.menu.style.fontsize
+        return self.bot
 
     def onclick(self, button, modifiers):
         self.onclick_core(self.onclick_arg)
 
     def toggle_visibility(self):
         self.visible = not self.visible
+        for item in self.items:
+            item.toggle_visibility()
 
 
 class Menu:
@@ -175,8 +181,6 @@ class Menu:
 
     def toggle_visibility(self):
         self.visible = not self.visible
-        for item in self.items:
-            item.toggle()
 
 
 class Spot:
@@ -198,7 +202,6 @@ class Spot:
         self.place = place
         self.x = x
         self.y = y
-        self.r = 8
         self.img = img
         self.visible = visible
         self.interactive = interactive

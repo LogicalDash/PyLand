@@ -164,36 +164,36 @@ class DefaultParameters:
         self.funcs = funcs
         # I'm going to have the menu bar on the left of the
         # screen. For convenience.
-        self.menus = [('Game', 0.0, 0.3, 1.0, 0.2, 'Default', False, True),
-                      ('Editor', 0.1, 0.3, 1.0, 0.2, 'Default', False, True),
-                      ('Place', 0.1, 0.3, 1.0, 0.2, 'Default', False, True),
-                      ('Thing', 0.1, 0.3, 1.0, 0.2, 'Default', False, True),
-                      ('Main', 0.0, 0.0, 1.0, 0.12, 'Default', True, True)]
+        self.menus = [('Game', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
+                      ('Editor', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
+                      ('Place', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
+                      ('Thing', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
+                      ('Main', 0.0, 0.0, 1.0, 0.12, 'Big', True, True)]
         menunames = [tup[0] for tup in self.menus]
         self.menuitems = []
         i = 0
         for item in game_menu_items.iteritems():
             self.menuitems.append(('Game', i,
                                    item[0], item[1][0], item[1][1],
-                                   True, False, True))
+                                   True, True, True))
             i += 1
         i = 0
         for item in editor_menu_items.iteritems():
             self.menuitems.append(('Editor', i, item[0],
                                    item[1][0], item[1][1],
-                                   True, False, True))
+                                   True, True, True))
             i += 1
         i = 0
         for item in place_menu_items.iteritems():
             self.menuitems.append(('Place', i,
                                    item[0], item[1][0], item[1][1],
-                                   True, False, True))
+                                   True, True, True))
             i += 1
         i = 0
         for item in thing_menu_items.iteritems():
             self.menuitems.append(('Thing', i,
                                    item[0], item[1][0], item[1][1],
-                                   True, False, True))
+                                   True, True, True))
             i += 1
         i = 0
         for item in main_menu_items.iteritems():
@@ -205,8 +205,14 @@ class DefaultParameters:
         self.colors = [('solarized-' + color[0],
                         color[1][0], color[1][1], color[1][2], 255)
                        for color in solarized_colors.iteritems()]
-        self.styles = [('Default',
+        self.styles = [('Big',
                         'DejaVu Sans', 16, 6,
+                        'solarized-base03',
+                        'solarized-base2',
+                        'solarized-base1',
+                        'solarized-base01'),
+                       ('Small',
+                        'DejaVu Sans', 12, 3,
                         'solarized-base03',
                         'solarized-base2',
                         'solarized-base1',

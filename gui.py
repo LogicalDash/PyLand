@@ -40,9 +40,8 @@ class GameWindow:
         self.mouse_mods = 0
         self.view_left = 0
         self.view_bot = 0
-        self.to_mouse = self.board.pawns + self.board.spots
-        for menu in self.board.menus:
-            self.to_mouse.extend(menu.items)
+        self.drawn = []
+        self.to_mouse = []
 
         window = pyglet.window.Window()
         if batch is None:
@@ -50,9 +49,7 @@ class GameWindow:
 
         @window.event
         def on_draw():
-            window.clear()
-            self.on_draw()  # actually adds stuff to batch. maybe rename?
-            self.batch.draw()
+            self.add_stuff_to_batch()
 
         @window.event
         def on_key_press(sym, mods):
@@ -80,99 +77,73 @@ class GameWindow:
         for menu in self.board.menus:
             menu.window = self.window
 
-    def on_draw(self):
-        drawn = []
-        # Draw the menus first, because otherwise I have no idea where
-        # their items are.
+    def add_stuff_to_batch(self):
+        self.window.clear()
+        self.to_mouse = []
+        for h in self.drawn:
+            h.delete()
+        self.drawn = []
         for menu in self.board.menus:
-            if not menu.visible:
-                continue
-            drawn.append(self.add_menu_to_batch(menu))
-            prev_bot = menu.gettop()
-            left = menu.getleft() + menu.style.spacing
-            right = menu.getright() - menu.style.spacing
-            for item in menu.items:
-                item.top = prev_bot - menu.style.spacing
-                item.bot = item.top - menu.style.fontsize
-                item.left = left
-                item.right = right
-                prev_bot = item.bot
-                drawn.append(self.add_menu_item_to_batch(item))
+            if menu.visible:
+                self.drawn.append(self.add_menu_to_batch(menu))
+                for item in menu.items:
+                    if item.visible:
+                        self.drawn.append(self.add_menu_item_to_batch(item))
+                        if item.interactive:
+                            self.to_mouse.append(item)
         for pawn in self.board.pawns:
-            if not pawn.visible:
-                continue
-            drawn.append(self.add_pawn_to_batch(pawn))
+            if pawn.visible:
+                self.drawn.append(self.add_pawn_to_batch(pawn))
+                if pawn.interactive:
+                    self.to_mouse.append(pawn)
         for spot in self.board.spots:
-            if not spot.visible:
-                continue
-            drawn.append(self.add_spot_to_batch(spot))
-        drawn.append(self.add_board_to_batch())
-        self.batch.draw()  # wasn't there something about gl_flush
+            if spot.visible:
+                self.drawn.append(self.add_spot_to_batch(spot))
+                if spot.interactive:
+                    self.to_mouse.append(spot)
+        self.drawn.append(self.add_board_to_batch())
+        self.batch.draw()
 
     def toggle_menu_visibility_by_name(self, name):
         self.db.toggle_menu_visibility(self.board.dimension + '.' + name)
 
-    def mouse_in(self, thingus):
-        x = self.mouse_x
-        y = self.mouse_y
-        return point_is_in(x, y, thingus)
-
-    def on_key_press(self, sym, mods):
-        self.last_key_pressed = self.last_updated
-        self.key_press_sym = sym
-        self.key_press_mods = mods
-
-    def key_pressed(self):
-        return self.last_key_pressed == self.last_updated
+    def on_key_press(self, key, mods):
+        pass
 
     def on_mouse_motion(self, x, y, dx, dy):
-        self.last_mouse_moved = self.last_updated
-        self.mouse_x = x
-        self.mouse_y = y
-        self.mouse_dx = dx
-        self.mouse_dy = dy
-        for moused in self.to_mouse:
-            if not (moused.visible and moused.interactive):
-                continue
-            if self.mouse_in(moused):
-                self.hovered = moused
-                break
+        if self.hovered is None:
+            for moused in self.to_mouse:
+                if moused is not None\
+                   and moused.interactive\
+                   and point_is_in(x, y, moused):
+                    self.hovered = moused
+                    break
+        else:
+            if not point_is_in(x, y, self.hovered):
+                self.hovered = None
 
     def on_mouse_press(self, x, y, button, modifiers):
-        self.last_mouse_pressed = self.last_updated
-        self.mouse_x = x
-        self.mouse_y = y
-        self.mouse_button = button
-        self.mouse_mods = modifiers
-        self.pressed = None
         self.hovered = None
-        self.grabbed = None
         for moused in self.to_mouse:
-            if not (moused.visible and moused.interactive):
-                continue
-            if self.mouse_in(moused):
+            if point_is_in(x, y, moused):
                 self.pressed = moused
                 break
 
     def on_mouse_release(self, x, y, button, modifiers):
-        self.last_mouse_released = self.last_updated
-        if self.pressed is not None and\
-           point_is_in(x, y, self.pressed):
+        if point_is_in(x, y, self.pressed)\
+           and hasattr(self.pressed, 'onclick'):
             self.pressed.onclick(button, modifiers)
         self.pressed = None
-        self.grabbed = None
         # I don't think it makes sense to consider it hovering if you
         # drag and drop something somewhere and then loiter. Hovering
         # is deliberate, this probably isn't
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
-        self.last_mouse_dragged = self.last_updated
-        if self.grabbed is not None:
-            self.grabbed.move_with_mouse(x, y, dx, dy, buttons, modifiers)
-        elif self.pressed is not None:
-            self.pressed.move_with_mouse(x, y, dx, dy, buttons, modifiers)
-            self.grabbed = self.pressed
-            self.pressed = None
+        if self.pressed is not None:
+            if hasattr(self.pressed, 'move_with_mouse'):
+                self.pressed.move_with_mouse(x, y, dx, dy, buttons, modifiers)
+            elif not point_is_in(x, y, self.pressed):
+                self.pressed = None
 
     def add_board_to_batch(self):
         x = -1 * self.view_left
@@ -192,12 +163,14 @@ class GameWindow:
 
     def add_menu_item_to_batch(self, mi):
         sty = mi.menu.style
-        if mi.hovered:
+        if self.hovered is mi:
             color = sty.fg_active
         else:
             color = sty.fg_inactive
+        left = mi.getleft()
+        bot = mi.getbot()
         return pyglet.text.Label(mi.text, sty.fontface, sty.fontsize,
-                                 color=color.tup, x=mi.left, y=mi.bot,
+                                 color=color.tup, x=left, y=bot,
                                  batch=self.batch, group=self.labelgroup)
 
     def add_spot_to_batch(self, spot):
@@ -217,9 +190,7 @@ class GameWindow:
         mode = pyglet.graphics.GL_LINES
         self.batch.add(len(portals) * 2, mode, self.edgegroup,
                        ('v2i', edge_positions))
-        x = spot.x - spot.r
-        y = spot.y - spot.r
-        return pyglet.sprite.Sprite(spot.img, x, y,
+        return pyglet.sprite.Sprite(spot.img, spot.x - spot.r, spot.y - spot.r,
                                     batch=self.batch, group=self.spotgroup)
 
     def add_pawn_to_batch(self, pawn):
@@ -231,7 +202,6 @@ class GameWindow:
         # find the spots to represent the beginning and the end of the
         # portal in which the thing stands, and find the point the
         # correct proportion of the distance between them.
-        sprite = pyglet.sprite.Sprite
         if hasattr(pawn, 'journey'):
             port = pawn.thing.journey.getstep(0)
             prog = pawn.thing.progress
@@ -241,25 +211,23 @@ class GameWindow:
             rise = thence.y - whence.y
             run = thence.x - whence.x
             # a point on the line, at prog * its length
-            x = (whence.x + prog * run) - (pawn.width / 2)
+            x = whence.x + prog * run
             y = whence.y + prog * rise
             # this may put it off the bounds of the screen
-            if (y + pawn.img.height <= 0 or x + pawn.img.width / 2 <= 0):
-                s = None
-            else:
-                s = sprite(pawn.img, x, y,
-                           batch=self.batch, group=self.pawngroup)
+            s = pyglet.sprite.Sprite(pawn.img, x - pawn.r, y,
+                                     batch=self.batch, group=self.pawngroup)
         else:
             dim = pawn.board.dimension
             locn = pawn.thing.location.name
             spot = self.db.spotdict[dim][locn]
-            x = spot.x - (pawn.img.width / 2)
-            y = spot.y  # a spot's x and y are at its center.
-            if (y + pawn.img.height <= 0 or x + pawn.img.width / 2 <= 0):
-                s = None
-            else:
-                s = sprite(pawn.img, x, y,
-                           batch=self.batch, group=self.pawngroup)
+            # Pawns are centered horizontally, but not vertically, on
+            # the spot they stand.  This prevents them from covering
+            # the spot overmuch while still making them look like
+            # they're "on top" of the spot.
+            x = spot.x
+            y = spot.y
+            s = pyglet.sprite.Sprite(pawn.img, x - pawn.r, y,
+                                     batch=self.batch, group=self.pawngroup)
         return s
 
 
@@ -273,6 +241,5 @@ gw = GameWindow(db, gamestate, 'Physical')
 gamespeed = 1/60.0
 
 # pyglet.clock.schedule_interval(gamestate.update, gamespeed, gamespeed)
-pyglet.clock.schedule_interval(gw.update, 1/60.0, gamespeed)
 
 pyglet.app.run()
