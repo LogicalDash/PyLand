@@ -1,7 +1,7 @@
 # This file is for the controllers for the things that show up on the
 # screen when you play.
 import pyglet
-from util import genschema
+from util import gentable
 
 
 class Color:
@@ -21,9 +21,8 @@ class Color:
                    'check(blue between 0 and 255)',
                    'alpha': 'integer default 255 '
                    'check(alpha between 0 and 255)'}
-    table_schema = genschema("color", keydecldict, valdecldict)
-    keynames = keydecldict.keys()
-    valnames = valdecldict.keys()
+    (keynames, valnames, colnames, schema) = gentable(
+        "color", keydecldict, valdecldict)
 
     def __init__(self, name, r=0, g=0, b=0, a=255):
         self.name = name
@@ -52,9 +51,8 @@ class MenuItem:
                    'interactive': 'boolean'}
     suffix = ("foreign key(menu) references menu(name), "
               "primary key(menu, idx)")
-    table_schema = genschema("menuitem", keydecldict, valdecldict, suffix)
-    keynames = keydecldict.keys()
-    valnames = valdecldict.keys()
+    (keynames, valnames, colnames, schema) = gentable(
+        "menuitem", keydecldict, valdecldict, suffix)
 
     def __init__(self, board, menu, idx, text, onclick, onclick_arg,
                  closer=True, visible=False, interactive=True):
@@ -143,10 +141,8 @@ class Menu:
                    'right': 'float not null',
                    'style': "text default 'Default'",
                    "visible": "boolean default 0"}
-    table_schema = genschema("menu", keydecldict, valdecldict,
-                             "foreign key(style) references style(name)")
-    keynames = keydecldict.keys()
-    valnames = valdecldict.keys()
+    (keynames, valnames, colnames, schema) = gentable(
+        "menu", keydecldict, valdecldict)
 
     def __init__(self, board, name,
                  left, bottom, top, right, style, visible):
@@ -224,9 +220,8 @@ class Spot:
               "references place(dimension, name), "
               "foreign key(img) references img(name), "
               "primary key(dimension, place)")
-    table_schema = genschema("spot", keydecldict, valdecldict, suffix)
-    keynames = keydecldict.keys()
-    valnames = valdecldict.keys()
+    (keynames, valnames, colnames, schema) = gentable(
+        "spot", keydecldict, valdecldict, suffix)
 
     def __init__(self, dimension, place, img, x, y, visible, interactive):
         self.dimension = dimension
@@ -293,9 +288,8 @@ class Pawn:
               "foreign key(dimension, thing) "
               "references thing(dimension, name), "
               "primary key(dimension, thing)")
-    table_schema = genschema("pawn", keydecldict, valdecldict, suffix)
-    keynames = keydecldict.keys()
-    valnames = valdecldict.keys()
+    (keynames, valnames, colnames, schema) = gentable(
+        "pawn", keydecldict, valdecldict, suffix)
 
     def __init__(self, dimension, thing, img, visible, interactive):
         self.dimension = dimension
@@ -306,8 +300,12 @@ class Pawn:
         self.hovered = False
 
     def __iter__(self):
-        return (self.dimension, self.thing.name, self.img.name,
-                self.visible, self.interactive)
+        return [
+            ("dimension", self.dimension),
+            ("name", self.thing.name),
+            ("img", self.img.name),
+            ("visible", self.visible),
+            ("interactive", self.interactive)]
 
     def getcoords(self):
         # Assume I've been provided a spotdict. Use it to get the
@@ -369,9 +367,8 @@ class Board:
                    "wallpaper": "text"}
     suffix = ("foreign key(dimension) references dimension(name), "
               "foreign key(wallpaper) references image(name)")
-    table_schema = genschema("board", keydecldict, valdecldict, suffix)
-    keynames = keydecldict.keys()
-    valnames = valdecldict.keys()
+    (keynames, valnames, colnames, schema) = gentable(
+        "board", keydecldict, valdecldict, suffix)
 
     def __init__(self, dimension, width, height, image,
                  spots=[], pawns=[], menus=[]):
@@ -384,7 +381,10 @@ class Board:
         self.menus = menus
 
     def __iter__(self):
-        return (self.dimension, self.width, self.height, self.img.name)
+        return [("dimension", self.dimension),
+                ("width", self.width),
+                ("height", self.height),
+                ("wallpaper", self.wallpaper)]
 
     def getwidth(self):
         return self.width
@@ -412,9 +412,8 @@ class Style:
               "foreign key(bg_active) references color(name), "
               "foreign key(fg_inactive) references color(name), "
               "foreign key(fg_active) references color(name)")
-    table_schema = genschema("style", keydecldict, valdecldict, suffix)
-    keynames = keydecldict.keys()
-    valnames = valdecldict.keys()
+    (keynames, valnames, colnames, schema) = gentable(
+        "style", keydecldict, valdecldict, suffix)
 
     def __init__(self, name, fontface, fontsize, spacing,
                  bg_inactive, bg_active, fg_inactive, fg_active):
@@ -433,5 +432,5 @@ class Style:
                 self.fg_inactive.name, self.fg_active.name)
 
 
-classes = [Color, MenuItem, Menu, Spot, Pawn, Board, Style]
-table_schemata = [clas.table_schema for clas in classes]
+tables = [Color, MenuItem, Menu, Spot, Pawn, Board, Style]
+table_schemata = [table.schema for table in tables]

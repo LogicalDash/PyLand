@@ -1,5 +1,5 @@
 import igraph
-from util import genschema
+from util import gentable
 
 
 class Journey:
@@ -28,22 +28,23 @@ class Journey:
     a Portal at a time, but Journey handles that case anyhow.
 
     """
-    table_schema = ("CREATE TABLE journey_step "
-                    "(dimension, "
-                    "thing, "
-                    "idx integer, "
-                    "destination, "
-                    "portal, "
-                    "progress float, "
-                    "foreign key(dimension, thing) "
-                    "references thing(dimension, name), "
-                    "foreign key(dimension, portal) "
-                    "references portal(dimension, name), "
-                    "foreign key(dimension, destination) "
-                    "references place(dimension, name), "
-                    "check(progress>=0.0), "
-                    "check(progress<1.0), "
-                    "primary key(dimension, thing, idx));")
+    keydecldict = {"dimension": "text",
+                   "thing": "text"}
+    valdecldict = {"idx": "integer",
+                   "destination": "text",
+                   "portal": "text",
+                   "progress": "float"}
+    suffix = ("foreign key(dimension, thing) "
+              "references thing(dimension, name), "
+              "foreign key(dimension, portal) "
+              "references portal(dimension, name), "
+              "foreign key(dimension, destination) "
+              "references place(dimension, name), "
+              "check(progress>=0.0), "
+              "check(progress<1.0), "
+              "primary key(dimension, thing, idx)")
+    (keynames, valnames, colnames, schema) = gentable(
+        "journey_step", keydecldict, valdecldict, suffix)
 
     def __init__(self, thing, dest, steplist):
         self.steplist = steplist
@@ -133,19 +134,20 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
-    table_schema = ("CREATE TABLE portal "
-                    "(dimension text, "
-                    "name text, "
-                    "from_place text, "
-                    "to_place text, "
-                    "foreign key(dimension, name) "
-                    "references item(dimension, name), "
-                    "foreign key(dimension, from_place) "
-                    "references place(dimenison, name), "
-                    "foreign key(dimension, to_place) "
-                    "references place(dimension, name), "
-                    "primary key(dimension, name), "
-                    "check(from_place<>to_place));")
+    keydecldict = {"dimension": "text",
+                   "name": "text"}
+    valdecldict = {"from_place": "text",
+                   "to_place": "text"}
+    suffix = ("foreign key(dimension, name) "
+              "references item(dimension, name), "
+              "foreign key(dimension, from_place) "
+              "references place(dimenison, name), "
+              "foreign key(dimension, to_place) "
+              "references place(dimension, name), "
+              "primary key(dimension, name), "
+              "check(from_place<>to_place)")
+    (keynames, valnames, colnames, schema) = gentable(
+        "portal", keydecldict, valdecldict, suffix)
 
     def __init__(self, dimension, name, origin, destination):
         self.dimension = dimension
@@ -197,11 +199,11 @@ class Portal:
 
 
 class Place:
-    table_schema = ("CREATE TABLE place "
-                    "(dimension text, "
-                    "name text, "
-                    "foreign key(dimension, name) "
-                    "references item(dimension, name));")
+    keydecldict = {"dimension": "text",
+                   "name": "text"}
+    valdecldict = {}
+    (keynames, valnames, colnames, schema) = gentable(
+        "place", keydecldict, valdecldict)
 
     def __init__(self, dimension, name, contents=[], portals=[]):
         self.name = name
@@ -210,7 +212,12 @@ class Place:
         self.portals = portals
 
     def __iter__(self):
-        return (self.dimension, self.name)
+        return [
+            ("dimension", self.dimension),
+            ("name", self.name)]
+
+    def __repr__(self):
+        return self.name
 
     def addthing(self, item):
         for test in self.entrytests:
@@ -227,9 +234,6 @@ class Place:
     def __repr__(self):
         return self.name
 
-    def __str__(self):
-        return "(" + ", ".join(self) + ")"
-
     def __eq__(self, other):
         # The name is the key in the database. Must be unique.
         return self.name == other.name
@@ -237,9 +241,9 @@ class Place:
 
 class Dimension:
     keydecldict = {"name": "text primary key"}
-    table_schema = genschema("dimension", keydecldict, {})
-    keynames = keydecldict.keys()
-    valnames = []
+    valdecldict = {}
+    (keynames, valnames, colnames, schema) = gentable(
+        "dimension", keydecldict, valdecldict)
 
     def __init__(self, name, places=[], portals=[]):
         self.name = name
@@ -287,5 +291,5 @@ class Dimension:
     def get_igraph_layout(self, layout_type):
         return self.get_igraph_graph().layout(layout=layout_type)
 
-classes = [Journey, Portal, Place, Dimension]
-table_schemata = [clas.table_schema for clas in classes]
+tables = [Journey, Portal, Place, Dimension]
+table_schemata = [tab.schema for tab in tables]

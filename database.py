@@ -11,7 +11,7 @@ from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
 from graph import Journey, Dimension, Place, Portal
 from pyglet.resource import image
-from parms import tables, default
+from parms import default
 
 sys.path.append(os.curdir)
 
@@ -31,12 +31,37 @@ def questionmarks(list_o_tups):
     return [q] * len(list_o_tups)
 
 
-def insstr(tabname, list_o_tups):
-    return "INSERT INTO " + tabname + " VALUES " +\
-        ", ".join(questionmarks(list_o_tups)) + ";"
+def dicl2tupl(dicl):
+    # Converts list of dicts with one set of keys to list of tuples of
+    # *values only*, not keys. They'll be in the same order as given
+    # by dict.keys().
+    keys = dicl[0].keys()
+    r = []
+    for dic in dicl:
+        l = [dic[k] for k in keys]
+        r.append(tuple(l))
+    return r
 
 
 class Database:
+    colnames = {"dimension": Dimension.colnames,
+                "menu": Menu.colnames,
+                "menuitem": MenuItem.colnames,
+                "color": Color.colnames,
+                "style": Style.colnames,
+                "item": ('dimension', 'name'),
+                "place": Place.colnames,
+                "portal": Portal.colnames,
+                "thing": Thing.colnames,
+                "location": ('dimension', 'thing', 'place'),
+                "containment": ('dimension', 'contained', 'container'),
+                "journey_step": Journey.colnames,
+                "img": ('name', 'path', 'rltile'),
+                "boardmenu": ('board', 'menu'),
+                "pawn": Pawn.colnames,
+                "spot": Spot.colnames,
+                "board": Board.colnames}
+
     def __init__(self, dbfile):
         self.conn = sqlite3.connect(dbfile)
         self.c = self.conn.cursor()
@@ -70,8 +95,28 @@ class Database:
         self.conn.commit()
         self.conn.close()
 
+    def insert_dicl(self, tabname, dicl):
+        # Takes a table name and a list of dictionaries, which are
+        # assumed to have keys that are the column names of the given
+        # table. Inserts the values given in the dictionarylist into
+        # the table.
+        coln = Database.colnames[tabname]
+        valtups = []
+        for dic in dicl:
+            row = [dic[colnam] for colnam in coln]
+            valtups.append(tuple(row))
+        qrystr = "INSERT INTO %s VALUES (%s);" % (
+            tabname, ", ".join(["?"] * len(coln)))
+        self.c.executemany(qrystr, valtups)
+
+    def insert_defaults(self):
+        for pair in default.table_contents.iteritems():
+            self.insert_dicl(*pair)
+        for func in default.funcs:
+            self.xfunc(func)
+
     def mkschema(self):
-        for tab in tables:
+        for tab in default.tables:
             self.c.execute(tab)
         self.conn.commit()
 
@@ -123,46 +168,6 @@ class Database:
     def sync(self):
         pass
         # TODO: write all altered objects to disk
-
-    def insert_1(self, tabname, default_list):
-        qm = ["?"] * len(default_list)
-        qrystr = "INSERT INTO %s VALUES (" % (tabname,) + ", ".join(qm) + ")"
-        self.c.execute(qrystr, default_list)
-
-    def insert_n(self, tabname, tups):
-        qm = ", ".join(["?"] * len(tups[0]))
-        qrystr = "INSERT INTO %s VALUES (%s);" % (tabname, qm)
-        self.c.executemany(qrystr, tups)
-
-    def insert(self, tabname, tups):
-        self.insert_n(tabname, tups)
-
-    def insert_defaults(self):
-        # dimensions first because a lot of other stuff requires them
-        self.insert_1("dimension", default.dimensions)
-        # items
-        self.insert("item", default.things)
-        self.insert("item", default.places)
-        portalkeys = [portal[:2] for portal in default.portals]
-        self.insert("item", portalkeys)
-        self.insert("thing", default.things)
-        self.insert("place", default.places)
-        self.insert("portal", default.portals)
-        self.insert("location", default.locations)
-        self.insert("containment", default.containments)
-        self.insert("journey_step", default.steps)
-        self.insert("img", default.imgs)
-        self.insert("spot", default.spots)
-        self.insert("pawn", default.pawns)
-        self.insert("menuitem", default.menuitems)
-        self.insert("color", default.colors)
-        self.insert("style", default.styles)
-        self.insert("menu", default.menus)
-        self.insert("board", default.boards)
-        self.insert("boardmenu", default.boardmenu)
-        # functions
-        for func in default.funcs:
-            self.xfunc(func)
 
     def xfunc(self, func):
         self.func[func.__name__] = func

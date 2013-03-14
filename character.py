@@ -45,6 +45,7 @@ item's name, and the name of the attribute.
                 self.attdict[dim][thing] = {}
             self.attdict[dim][thing][att] = val
 
+
 class BoolCheck:
     def __init__(self):
         """This is an abstract class."""

@@ -159,101 +159,142 @@ class DefaultParameters:
         exec('def %s():\n\tpass\n\nself.stubs["%s"]=%s' % (stub, stub, stub))
 
     def __init__(self):
-        self.dimensions = [("Physical")]
+        self.dimensions = [{"name": "Physical"}]
         self.tables = tables
         self.funcs = funcs
         # I'm going to have the menu bar on the left of the
         # screen. For convenience.
         gamemenu = {'name': 'Game',
-                      'left': 0.1,
-                      'bottom': 0.3,
-                      'top': 1.0,
-                      'right': 0.2,
-                      'style': 'Small',
-                      'visible': False,}
+                    'left': 0.1,
+                    'bottom': 0.3,
+                    'top': 1.0,
+                    'right': 0.2,
+                    'style': 'Small',
+                    'visible': False}
         editormenu = {'name': 'Editor',
                       'left': 0.1,
                       'bottom': 0.3,
                       'top': 1.0,
                       'right': 0.2,
                       'style': 'Small',
-                      'visible': False,}
-        placemenu = {'name': ,
-                      'left': ,
-                      'bottom': ,
-                      'top': ,
-                      'right': ,
-                      'style': ,
-                      'visible': ,}
-        thingmenu = {'name': ,
-                      'left': ,
-                      'bottom': ,
-                      'top': ,
-                      'right': ,
-                      'style': ,
-                      'visible': ,}
-        mainmenu = {'name': ,
-                      'left': ,
-                      'bottom': ,
-                      'top': ,
-                      'right': ,
-                      'style': ,
-                      'visible': ,}
-        self.menus = 
-# [('Game', 0.1, 0.3, 1.0, 0.2, 'Small', False),
-#  ('Editor', 0.1, 0.3, 1.0, 0.2, 'Small', False),
-#  ('Place', 0.1, 0.3, 1.0, 0.2, 'Small', False),
-#  ('Thing', 0.1, 0.3, 1.0, 0.2, 'Small', False),
-#  ('Main', 0.0, 0.0, 1.0, 0.12, 'Big', True)]
-        menunames = [tup[0] for tup in self.menus]
+                      'visible': False}
+        placemenu = {'name': 'Place',
+                     'left': 0.1,
+                     'bottom': 0.3,
+                     'top': 1.0,
+                     'right': 0.2,
+                     'style': 'Small',
+                     'visible': False}
+        thingmenu = {'name': 'Thing',
+                     'left': 0.1,
+                     'bottom': 0.3,
+                     'top': 1.0,
+                     'right': 0.2,
+                     'style': 'Small',
+                     'visible': False}
+        mainmenu = {'name': 'Main',
+                    'left': 0.0,
+                    'bottom': 0.0,
+                    'top': 1.0,
+                    'right': 0.12,
+                    'style': 'Big',
+                    'visible': True}
+        self.menus = [gamemenu, editormenu, placemenu, thingmenu, mainmenu]
+        menunames = [menud["name"] for menud in self.menus]
+
+        def mkmenuitemd(menu, idx, text, onclick, onclick_arg,
+                        closer, visible, interactive):
+            return {'menu': menu,
+                    'idx': idx,
+                    'text': text,
+                    'onclick': onclick,
+                    'onclick_arg': onclick_arg,
+                    'closer': closer,
+                    'visible': visible,
+                    'interactive': interactive}
         self.menuitems = []
         i = 0
         for item in game_menu_items.iteritems():
-            self.menuitems.append(('Game', i,
-                                   item[0], item[1][0], item[1][1],
-                                   True, True, True))
+            self.menuitems.append(
+                mkmenuitemd('Game', i,
+                            item[0], item[1][0], item[1][1],
+                            True, True, True))
             i += 1
         i = 0
         for item in editor_menu_items.iteritems():
-            self.menuitems.append(('Editor', i, item[0],
-                                   item[1][0], item[1][1],
-                                   True, True, True))
+            self.menuitems.append(
+                mkmenuitemd('Editor', i, item[0],
+                            item[1][0], item[1][1],
+                            True, True, True))
             i += 1
         i = 0
         for item in place_menu_items.iteritems():
-            self.menuitems.append(('Place', i,
-                                   item[0], item[1][0], item[1][1],
-                                   True, True, True))
+            self.menuitems.append(
+                mkmenuitemd('Place', i,
+                            item[0], item[1][0], item[1][1],
+                            True, True, True))
             i += 1
         i = 0
         for item in thing_menu_items.iteritems():
-            self.menuitems.append(('Thing', i,
-                                   item[0], item[1][0], item[1][1],
-                                   True, True, True))
+            self.menuitems.append(
+                mkmenuitemd('Thing', i,
+                            item[0], item[1][0], item[1][1],
+                            True, True, True))
             i += 1
         i = 0
         for item in main_menu_items.iteritems():
-            self.menuitems.append(('Main', i,
-                                   item[0], item[1][0], item[1][1],
-                                   False, True, True))
+            self.menuitems.append(
+                mkmenuitemd('Main', i,
+                            item[0], item[1][0], item[1][1],
+                            False, True, True))
             i += 1
 
-        self.colors = [('solarized-' + color[0],
-                        color[1][0], color[1][1], color[1][2], 255)
-                       for color in solarized_colors.iteritems()]
-        self.styles = [('Big',
-                        'DejaVu Sans', 16, 6,
-                        'solarized-base03',
-                        'solarized-base2',
-                        'solarized-base1',
-                        'solarized-base01'),
-                       ('Small',
-                        'DejaVu Sans', 12, 3,
-                        'solarized-base03',
-                        'solarized-base2',
-                        'solarized-base1',
-                        'solarized-base01')]
-        self.places = [('Physical', p) for p in placenames]
+        def mkcolord(name, red, green, blue, alpha):
+            return {'name': name,
+                    'red': red,
+                    'green': green,
+                    'blue': blue,
+                    'alpha': alpha}
+
+        def mkstyled(name, fontface, fontsize, spacing,
+                     bg_inactive, bg_active,
+                     fg_inactive, fg_active):
+            return {'name': name,
+                    'fontface': fontface,
+                    'fontsize': fontsize,
+                    'spacing': spacing,
+                    'bg_inactive': bg_inactive,
+                    'bg_active': bg_active,
+                    'fg_inactive': fg_inactive,
+                    'fg_active': fg_active}
+
+        self.colors = [
+            mkcolord(
+                'solarized-' + color[0],
+                color[1][0], color[1][1],
+                color[1][2], 255)
+            for color in solarized_colors.iteritems()]
+        self.styles = [
+            mkstyled(
+                'Big',
+                'DejaVu Sans', 16, 6,
+                'solarized-base03',
+                'solarized-base2',
+                'solarized-base1',
+                'solarized-base01'),
+            mkstyled(
+                'Small',
+                'DejaVu Sans', 12, 3,
+                'solarized-base03',
+                'solarized-base2',
+                'solarized-base1',
+                'solarized-base01')]
+
+        def mkitemd(dimension, name):
+            return {'dimension': dimension,
+                    'name': name}
+
+        self.places = [mkitemd('Physical', p) for p in placenames]
         rpos = [('myroom', 'guestroom'),
                 ('myroom', 'mybathroom'),
                 ('myroom', 'outside'),
@@ -271,9 +312,14 @@ class DefaultParameters:
                  ('diningoffice', 'outside'),
                  ('momsroom', 'outside')]
         pos = reciprocal_pairs(rpos) + nrpos
-        portaldict = dict([(('Physical', "portal[%s->%s]" % po), po)
-                           for po in pos])
-        self.portals = [it[0] + it[1] for it in portaldict.iteritems()]
+
+        def mkportald(dimension, orig, dest):
+            return {'dimension': dimension,
+                    'name': "portal[%s->%s]" % (orig, dest),
+                    'from_place': orig,
+                    'to_place': dest}
+
+        self.portals = [mkportald('Physical', po[0], po[1]) for po in pos]
         ths = [('me', 'myroom'),
                ('diningtable', 'diningoffice'),
                ('mydesk', 'myroom'),
@@ -283,8 +329,14 @@ class DefaultParameters:
                ('fridge', 'kitchen'),
                ('momsbed', 'momsroom'),
                ('mom', 'momsroom')]
-        self.things = [('Physical', th[0]) for th in ths]
-        self.locations = [('Physical',) + th for th in ths]
+        self.things = [mkitemd('Physical', th[0]) for th in ths]
+
+        def mklocd(dimension, thing, place):
+            return {'dimension': dimension,
+                    'thing': thing,
+                    'place': place}
+
+        self.locations = [mklocd('Physical', th[0], th[1]) for th in ths]
         mjos = ["portal[momsroom->longhall]",
                 "portal[longhall->livingroom]",
                 "portal[livingroom->diningoffice]",
@@ -299,17 +351,100 @@ class DefaultParameters:
             steps_outside.append(('Physical', 'mom', i, 'outside',
                                   mjos[i], 0.0))
             i += 1
-        self.steps = steps_to_kitchen + steps_outside
-        self.containments = [('Physical', th[0], th[1]) for th in ths]
-        self.boards = [('Physical', 800, 600, 'wall')]
-        self.boardmenu = [('Physical', menuname) for menuname in menunames]
-        self.imgs = [("troll_m", "rltiles/player/base/troll_m.bmp", True),
-                     ("zruty", "rltiles/nh-mon0/z/zruty.bmp", True),
-                     ("orb", "orb.png", False),
-                     ("wall", "wallpape.jpg", False)]
-        self.spots = [('Physical', place, "orb", 0, 0, True, True)
-                      for place in placenames]
-        self.pawns = [('Physical', 'me', "troll_m", True, True),
-                      ('Physical', 'mom', 'zruty', True, True)]
+
+        def mkstepd(dimension, thing, idx, destination, portal, progress):
+            return {"dimension": dimension,
+                    "thing": thing,
+                    "idx": idx,
+                    "destination": destination,
+                    "portal": portal,
+                    "progress": progress}
+
+        self.steps = [mkstepd(*step)
+                      for step in steps_to_kitchen + steps_outside]
+
+        def mkcontd(dimension, contained, container):
+            return {"dimension": dimension,
+                    "contained": contained,
+                    "container": container}
+
+        self.containments = [mkcontd('Physical', th[0], th[1]) for th in ths]
+
+        def mkboardd(dimension, width, height, wallpaper):
+            return {"dimension": dimension,
+                    "width": width,
+                    "height": height,
+                    "wallpaper": wallpaper}
+
+        self.boards = [mkboardd('Physical', 800, 600, 'wall')]
+
+        def mkboardmenud(board, menu):
+            return {"board": board,
+                    "menu": menu}
+
+        self.boardmenu = [mkboardmenud('Physical', menuname)
+                          for menuname in menunames]
+
+        def mkimgd(name, path, rltile):
+            return {"name": name,
+                    "path": path,
+                    "rltile": rltile}
+
+        imgtups = [("troll_m", "rltiles/player/base/troll_m.bmp", True),
+                   ("zruty", "rltiles/nh-mon0/z/zruty.bmp", True),
+                   ("orb", "orb.png", False),
+                   ("wall", "wallpape.jpg", False)]
+        self.imgs = [mkimgd(*tup) for tup in imgtups]
+
+        def mkspotd(dimension, place, img, x, y, visible, interactive):
+            return {"dimension": dimension,
+                    "place": place,
+                    "img": img,
+                    "x": x,
+                    "y": y,
+                    "visible": visible,
+                    "interactive": interactive}
+
+        self.spots = [
+            mkspotd('Physical', 'myroom', "orb", 400, 100, True, True),
+            mkspotd('Physical', 'mybathroom', 'orb', 450, 150, True, True),
+            mkspotd('Physical', 'guestroom', 'orb', 400, 200, True, True),
+            mkspotd('Physical', 'livingroom', 'orb', 300, 150, True, True),
+            mkspotd('Physical', 'diningoffice', 'orb', 350, 200, True, True),
+            mkspotd('Physical', 'kitchen', 'orb', 350, 150, True, True),
+            mkspotd('Physical', 'longhall', 'orb', 250, 150, True, True),
+            mkspotd('Physical', 'momsroom', 'orb', 250, 100, True, True),
+            mkspotd('Physical', 'momsbathroom', 'orb', 250, 200, True, True),
+            mkspotd('Physical', 'outside', 'orb', 300, 100, True, True)]
+
+        def mkpawnd(dimension, thing, img, visible, interactive):
+            return {"dimension": dimension,
+                    "thing": thing,
+                    "img": img,
+                    "visible": visible,
+                    "interactive": interactive}
+
+        pawntups = [('Physical', 'me', "troll_m", True, True),
+                    ('Physical', 'mom', 'zruty', True, True)]
+        self.pawns = [mkpawnd(*tup) for tup in pawntups]
+
+        self.table_contents = {
+            "dimension": self.dimensions,
+            "menu": self.menus,
+            "menuitem": self.menuitems,
+            "color": self.colors,
+            "style": self.styles,
+            "item": self.places + self.portals + self.things,
+            "place": self.places,
+            "portal": self.portals,
+            "thing": self.things,
+            "location": self.locations,
+            "containment": self.containments,
+            "journey_step": self.steps,
+            "board": self.boards,
+            "boardmenu": self.boardmenu,
+            "img": self.imgs,
+            "spot": self.spots,
+            "pawn": self.pawns}
 
 default = DefaultParameters()

@@ -1,22 +1,19 @@
-def iterdict(keydict):
-    r = []
-    for key in keydict.iterkeys():
-        if keydict[key] == '':
-            r.append(key)
-        else:
-            r.append(key + ' ' + keydict[key])
-    return r
-
-
-def genschema(tabname, keydict, valdict, suffix=""):
-    ikeydict = iterdict(keydict)
-    ivaldict = iterdict(valdict)
+def gentable(tabname, keydict, valdict, suffix=""):
+    keynames = sorted(keydict.iterkeys())
+    valnames = sorted(valdict.iterkeys())
+    colnames = keynames + valnames
+    coldict = {}
+    coldict.update(keydict)
+    coldict.update(valdict)
+    coldecl = ", ".join(
+        [colname + " " + coldict[colname] for colname in colnames])
     if suffix == "":
-        final_comma = ""
+        return (keynames, valnames, colnames,
+                "CREATE TABLE " + tabname + " (" + coldecl + ");")
     else:
-        final_comma = ", "
-    return ("CREATE TABLE " + tabname + " (" + ", ".join(ikeydict + ivaldict)
-            + final_comma + suffix + ");")
+        return (keynames, valnames, colnames,
+                "CREATE TABLE " + tabname + " (" + coldecl
+                + ", " + suffix + ");")
 
 
 def genforeignkey(key_name, foreign_table, foreign_column):

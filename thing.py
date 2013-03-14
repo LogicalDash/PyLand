@@ -1,11 +1,13 @@
 from attrcheck import AttrCheck
+from util import gentable
 
 
 class Thing:
-    table_schema = ("CREATE TABLE thing "
-                    "(dimension, name text, "
-                    "foreign key(dimension, name) "
-                    "references item(dimension, name));")
+    keydecldict = {"dimension": "text",
+                   "name": "text"}
+    valdecldict = {}
+    (keynames, valnames, colnames, schema) = gentable(
+        "thing", keydecldict, valdecldict)
 
     def __init__(self, dimension, name, location, contents=[]):
         self.dimension = dimension
@@ -80,4 +82,4 @@ class Thing:
 # TODO: subclasses of thing to differentiate between things and other things
 
 classes = [Thing]
-table_schemata = [clas.table_schema for clas in classes]
+table_schemata = [clas.schema for clas in classes]

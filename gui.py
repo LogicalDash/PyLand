@@ -130,9 +130,10 @@ class GameWindow:
                 break
 
     def on_mouse_release(self, x, y, button, modifiers):
-        if point_is_in(x, y, self.pressed)\
-           and hasattr(self.pressed, 'onclick'):
-            self.pressed.onclick(button, modifiers)
+        if self.pressed is not None:
+            if point_is_in(x, y, self.pressed)\
+               and hasattr(self.pressed, 'onclick'):
+                self.pressed.onclick(button, modifiers)
         self.pressed = None
         # I don't think it makes sense to consider it hovering if you
         # drag and drop something somewhere and then loiter. Hovering
