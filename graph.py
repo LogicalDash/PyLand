@@ -1,5 +1,6 @@
 import igraph
 from util import gentable
+from uuid import uuid1 as uuid
 
 
 class Journey:
@@ -154,6 +155,7 @@ class Portal:
         self.name = name
         self.dest = destination
         self.orig = origin
+        self.uuid = uuid()
 
     def __iter__(self):
         return (self.dimension, self.name, self.orig.name, self.dest.name)
@@ -166,6 +168,9 @@ class Portal:
 
     def __eq__(self, other):
         return self.name == other.name
+
+    def __hash__(self):
+        return int(self.uuid)
 
     def get_weight(self):
         return self.weight

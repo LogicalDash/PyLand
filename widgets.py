@@ -2,6 +2,7 @@
 # screen when you play.
 import pyglet
 from util import gentable
+from uuid import uuid1 as uuid
 
 
 class Color:
@@ -103,6 +104,18 @@ class MenuItem:
     def __repr__(self):
         return self.text
 
+    def __hash__(self):
+        return hash(self.menu.board.dimension + self.menu.name + str(self.idx))
+
+    def getcenter(self):
+        width = self.getwidth()
+        height = self.getheight()
+        rx = width / 2
+        ry = height / 2
+        x = self.getleft()
+        y = self.getbot()
+        return (x + rx, y + ry)
+
     def getleft(self):
         if not hasattr(self, 'left'):
             self.left = self.menu.getleft() + self.menu.style.spacing
@@ -124,8 +137,18 @@ class MenuItem:
             self.bot = self.gettop() - self.menu.style.fontsize
         return self.bot
 
+    def getwidth(self):
+        if not hasattr(self, 'width'):
+            self.width = self.getright() - self.getleft()
+        return self.width
+
+    def getheight(self):
+        if not hasattr(self, 'height'):
+            self.height = self.getright() - self.getleft()
+        return self.height
+
     def onclick(self, button, modifiers):
-        self.onclick_core(self.onclick_arg)
+        return self.onclick_core(self.onclick_arg)
 
     def toggle_visibility(self):
         self.visible = not self.visible
@@ -143,6 +166,7 @@ class Menu:
                    "visible": "boolean default 0"}
     (keynames, valnames, colnames, schema) = gentable(
         "menu", keydecldict, valdecldict)
+    interactive = True
 
     def __init__(self, board, name,
                  left, bottom, top, right, style, visible):
@@ -231,6 +255,8 @@ class Spot:
         self.img = img
         self.visible = visible
         self.interactive = interactive
+        self.grabpoint = None
+        self.uuid = uuid()
 
     def __iter__(self):
         return (self.dimension, self.place.name, self.img.name, self.x,
@@ -238,6 +264,9 @@ class Spot:
 
     def __repr__(self):
         return "spot(%i,%i)->%s" % (self.x, self.y, str(self.place))
+
+    def __hash__(self):
+        return int(self.uuid)
 
     def getleft(self):
         return self.x - self.r
@@ -251,6 +280,9 @@ class Spot:
     def getright(self):
         return self.x + self.r
 
+    def getcenter(self):
+        return (self.x, self.y)
+
     def gettup(self):
         return (self.img, self.getleft(), self.getbot())
 
@@ -262,6 +294,16 @@ class Spot:
 
     def onclick(self, button, modifiers):
         pass
+
+    def dropped(self, x, y, button, modifiers):
+        self.grabpoint = None
+
+    def move_with_mouse(self, x, y, dx, dy, buttons, modifiers):
+        if self.grabpoint is None:
+            self.grabpoint = (x - self.x, y - self.y)
+        (grabx, graby) = self.grabpoint
+        self.x = x - grabx + dx
+        self.y = y - graby + dy
 
 
 class Pawn:
@@ -322,6 +364,8 @@ class Pawn:
         # division.
         if not hasattr(self, 'rx'):
             self.rx = self.img.width / 2
+        if not hasattr(self, 'ry'):
+            self.ry = self.img.height / 2
         if hasattr(self.thing, 'journey') and\
            self.thing.journey.stepsleft() > 0:
             j = self.thing.journey
@@ -337,6 +381,10 @@ class Pawn:
         else:
             ls = self.thing.location.spot
             return (ls.x, ls.y)
+
+    def getcenter(self):
+        (x, y) = self.getcoords()
+        return (x, y + self.ry)
 
     def getleft(self):
         return self.getcoords()[0] - self.rx

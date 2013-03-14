@@ -1,6 +1,9 @@
 import pyglet
 from database import Database
 from state import GameState
+from copy import copy
+from widgets import Menu, MenuItem, Spot, Pawn, Board
+from time import sleep
 
 
 def point_is_in(x, y, listener):
@@ -40,8 +43,10 @@ class GameWindow:
         self.mouse_mods = 0
         self.view_left = 0
         self.view_bot = 0
-        self.drawn = []
-        self.to_mouse = []
+
+        self.to_mouse = self.board.pawns + self.board.spots
+        for menu in self.board.menus:
+            self.to_mouse.extend(menu.items)
 
         window = pyglet.window.Window()
         if batch is None:
@@ -73,42 +78,79 @@ class GameWindow:
 
         self.window = window
         self.batch = batch
-
         for menu in self.board.menus:
             menu.window = self.window
 
+        self.drawn = {"edges": {}}
+
+        self.menus_changed = copy(self.board.menus)
+        self.pawns_changed = copy(self.board.pawns)
+        self.spots_changed = copy(self.board.spots)
+
     def add_stuff_to_batch(self):
-        self.window.clear()
-        self.to_mouse = []
-        for h in self.drawn:
-            h.delete()
-        self.drawn = []
-        for menu in self.board.menus:
-            if menu.visible:
-                self.drawn.append(self.add_menu_to_batch(menu))
-                for item in menu.items:
-                    if item.visible:
-                        self.drawn.append(self.add_menu_item_to_batch(item))
-                        if item.interactive:
-                            self.to_mouse.append(item)
-        for pawn in self.board.pawns:
-            if pawn.visible:
-                self.drawn.append(self.add_pawn_to_batch(pawn))
-                if pawn.interactive:
-                    self.to_mouse.append(pawn)
+        old = set()
+        newmenus = []
+        newmenuitems = []
+        newpawns = []
+        newspots = []
+        while len(self.menus_changed) > 0:
+            menu = self.menus_changed.pop()
+            if menu in self.drawn:
+                old.add(self.drawn[menu])
+            newmenus.append(menu)
+            for item in menu.items:
+                if item in self.drawn:
+                    old.add(self.drawn[item])
+                newmenuitems.append(item)
+        while len(self.pawns_changed) > 0:
+            pawn = self.pawns_changed.pop()
+            if pawn in self.drawn:
+                old.add(self.drawn[pawn])
+            newpawns.append(pawn)
+        while len(self.spots_changed) > 0:
+            spot = self.spots_changed.pop()
+            if spot in self.drawn:
+                old.add(self.drawn[spot])
+            newspots.append(spot)
+
+        if hasattr(self, 'boardsprite'):
+            old.add(self.boardsprite)
+        for trash in iter(old):
+            trash.delete()
+        for vex in self.drawn["edges"].itervalues():
+            vex.delete()
+
+        for menu in newmenus:
+            self.add_menu_to_batch(menu)
+        for item in newmenuitems:
+            self.add_menu_item_to_batch(item)
+        for pawn in newpawns:
+            self.add_pawn_to_batch(pawn)
+        for spot in newspots:
+            self.add_spot_to_batch(spot)
         for spot in self.board.spots:
-            if spot.visible:
-                self.drawn.append(self.add_spot_to_batch(spot))
-                if spot.interactive:
-                    self.to_mouse.append(spot)
-        self.drawn.append(self.add_board_to_batch())
+            self.add_spot_edges_to_batch(spot)
+        self.add_board_to_batch()
         self.batch.draw()
 
     def toggle_menu_visibility_by_name(self, name):
         self.db.toggle_menu_visibility(self.board.dimension + '.' + name)
+        return self.db.menudict[self.board.dimension][name]
 
     def on_key_press(self, key, mods):
         pass
+
+    def change(self, it):
+        if isinstance(it, MenuItem):
+            self.menus_changed.append(it.menu)
+        elif isinstance(it, Menu):
+            self.menus_changed.append(it)
+        elif isinstance(it, Spot):
+            self.spots_changed.append(it)
+        elif isinstance(it, Pawn):
+            self.pawns_changed.append(it)
+        else:
+            raise Exception("I don't know how to change this")
 
     def on_mouse_motion(self, x, y, dx, dy):
         if self.hovered is None:
@@ -117,82 +159,107 @@ class GameWindow:
                    and moused.interactive\
                    and point_is_in(x, y, moused):
                     self.hovered = moused
+                    self.change(moused)
                     break
         else:
             if not point_is_in(x, y, self.hovered):
+                self.change(self.hovered)
                 self.hovered = None
 
     def on_mouse_press(self, x, y, button, modifiers):
-        self.hovered = None
+        if self.hovered is not None:
+            self.change(self.hovered)
+            self.hovered = None
         for moused in self.to_mouse:
             if point_is_in(x, y, moused):
+                self.change(moused)
                 self.pressed = moused
                 break
 
     def on_mouse_release(self, x, y, button, modifiers):
-        if self.pressed is not None:
+        if self.grabbed is not None:
+            self.change(self.grabbed)
+            self.grabbed.dropped(x, y, button, modifiers)
+            self.grabbed = None
+        elif self.pressed is not None:
             if point_is_in(x, y, self.pressed)\
                and hasattr(self.pressed, 'onclick'):
-                self.pressed.onclick(button, modifiers)
-        self.pressed = None
+                also = self.pressed.onclick(button, modifiers)
+                self.change(self.pressed)
+                self.change(also)
+        if self.pressed is not None:
+            self.change(self.pressed)
+            self.pressed = None
         # I don't think it makes sense to consider it hovering if you
         # drag and drop something somewhere and then loiter. Hovering
         # is deliberate, this probably isn't
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
-        if self.pressed is not None:
+        if self.grabbed is not None:
+            self.grabbed.move_with_mouse(x, y, dx, dy, buttons, modifiers)
+            self.change(self.grabbed)
+            if isinstance(self.grabbed, Spot):
+                for pawn in self.pawns_on(self.grabbed):
+                    if pawn is not None:
+                        self.change(pawn)
+        elif self.pressed is not None:
             if hasattr(self.pressed, 'move_with_mouse'):
                 self.pressed.move_with_mouse(x, y, dx, dy, buttons, modifiers)
+                self.grabbed = self.pressed
+                self.change(self.grabbed)
+                self.pressed = None
             elif not point_is_in(x, y, self.pressed):
+                self.change(self.pressed)
                 self.pressed = None
 
     def add_board_to_batch(self):
         x = -1 * self.view_left
         y = -1 * self.view_bot
         s = pyglet.sprite.Sprite(self.board.img, x, y,
-                                 self.batch, self.boardgroup)
-        return s
+                                 batch=self.batch, group=self.boardgroup)
+        self.boardsprite = s
 
     def add_menu_to_batch(self, menu):
-        color = menu.style.bg_inactive
-        w = menu.getwidth()
-        h = menu.getheight()
-        pattern = pyglet.image.SolidColorImagePattern(color.tup)
-        image = pattern.create_image(w, h)
-        return pyglet.sprite.Sprite(image, menu.getleft(), menu.getbot(),
-                                    batch=self.batch, group=self.menugroup)
+        if menu.visible:
+            color = menu.style.bg_inactive
+            w = menu.getwidth()
+            h = menu.getheight()
+            pattern = pyglet.image.SolidColorImagePattern(color.tup)
+            image = pattern.create_image(w, h)
+            s = pyglet.sprite.Sprite(image, menu.getleft(), menu.getbot(),
+                                     batch=self.batch, group=self.menugroup)
+            self.drawn[menu] = s
 
     def add_menu_item_to_batch(self, mi):
-        sty = mi.menu.style
-        if self.hovered is mi:
-            color = sty.fg_active
-        else:
-            color = sty.fg_inactive
-        left = mi.getleft()
-        bot = mi.getbot()
-        return pyglet.text.Label(mi.text, sty.fontface, sty.fontsize,
-                                 color=color.tup, x=left, y=bot,
-                                 batch=self.batch, group=self.labelgroup)
+        if mi.visible and mi.menu.visible:
+            sty = mi.menu.style
+            if self.hovered is mi:
+                color = sty.fg_active
+            else:
+                color = sty.fg_inactive
+            left = mi.getleft()
+            bot = mi.getbot()
+            l = pyglet.text.Label(mi.text, sty.fontface, sty.fontsize,
+                                  color=color.tup, x=left, y=bot,
+                                  batch=self.batch, group=self.labelgroup)
+            self.drawn[mi] = l
 
     def add_spot_to_batch(self, spot):
-        # This also adds edges representing all the portals from the
-        # spot. Those edges are added to the batch directly. They
-        # won't be returned.
-        portals = spot.place.portals
-        edge_positions = []
-        for portal in portals:
-            origspot = portal.orig.spot
-            orig_x = origspot.x
-            orig_y = origspot.y
-            destspot = portal.dest.spot
-            dest_x = destspot.x
-            dest_y = destspot.y
-            edge_positions.extend([orig_x, orig_y, dest_x, dest_y])
-        mode = pyglet.graphics.GL_LINES
-        self.batch.add(len(portals) * 2, mode, self.edgegroup,
-                       ('v2i', edge_positions))
-        return pyglet.sprite.Sprite(spot.img, spot.x - spot.r, spot.y - spot.r,
-                                    batch=self.batch, group=self.spotgroup)
+        if spot.visible:
+            s = pyglet.sprite.Sprite(spot.img, spot.x - spot.r, spot.y -
+                                     spot.r, batch=self.batch,
+                                     group=self.spotgroup)
+            self.drawn[spot] = s
+
+    def add_spot_edges_to_batch(self, spot):
+        e = []
+        for portal in spot.place.portals:
+            otherspot = portal.dest.spot
+            e.extend([spot.x, spot.y, otherspot.x, otherspot.y])
+        if len(e) > 0:
+            ee = self.batch.add(len(e) / 2, pyglet.graphics.GL_LINES,
+                                self.edgegroup, ('v2i', e))
+            self.drawn["edges"][spot] = ee
 
     def add_pawn_to_batch(self, pawn):
         # Getting the window coordinates whereupon to put the pawn
@@ -229,7 +296,11 @@ class GameWindow:
             y = spot.y
             s = pyglet.sprite.Sprite(pawn.img, x - pawn.r, y,
                                      batch=self.batch, group=self.pawngroup)
-        return s
+        self.drawn[pawn] = s
+
+    def pawns_on(self, spot):
+        return [thing.pawn
+                for thing in self.db.things_in_place(spot.place)]
 
 
 db = Database(":memory:")

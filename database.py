@@ -129,42 +129,6 @@ class Database:
         except sqlite3.OperationalError:
             return False
 
-    def alter(self, obj):
-        "Pass an object here to have the database remember it, both in the "
-        "short term and eventually on the disk."
-        if isinstance(obj, Dimension):
-            self.dimdict[obj.name] = obj
-        elif isinstance(obj, Place):
-            self.placedict[obj.name] = obj
-            self.attributiondict[obj.name] = obj.att
-        elif isinstance(obj, Portal):
-            self.portaldict[obj.name] = obj
-            podd = self.portalorigdestdict
-            pdod = self.portaldestorigdict
-            podd[obj.origin.name][obj.destination.name] = obj
-            pdod[obj.destination.name][obj.origin.name] = obj
-            self.attributiondict[obj.name] = obj.att
-        elif isinstance(obj, Thing):
-            self.thingdict[obj.name] = obj
-            self.attributiondict[obj.name] = obj.att
-        elif isinstance(obj, Spot):
-            self.spotdict[obj.place.name] = obj
-        elif isinstance(obj, Board):
-            self.boarddict[obj.name] = obj
-        elif isinstance(obj, Menu):
-            self.menudict[obj.name] = obj
-        elif isinstance(obj, MenuItem):
-            self.menuitemdict[obj.name] = obj
-        elif isinstance(obj, Pawn):
-            self.pawndict[obj.thing.name][obj.board.name] = obj
-        elif isinstance(obj, Style):
-            self.styledict[obj.name] = obj
-        elif isinstance(obj, Color):
-            self.colordict[obj.name] = obj
-        else:
-            raise Exception("I have nowhere to put this!")
-        self.altered.append(obj)
-
     def sync(self):
         pass
         # TODO: write all altered objects to disk
@@ -364,7 +328,7 @@ class Database:
             td[dimension][name] = thing
             if location not in pcd[dimension]:
                 pcd[dimension][location] = []
-            pcd[dimension][location].append(thing)
+            pcd[dimension][location].append(thing.name)
 
     def load_portals_in_dimension(self, dimension):
         qrystr = "SELECT name, from_place, to_place FROM portal "\
@@ -570,3 +534,21 @@ visibility of the given menu on the given board.
         qrylst = untuple(keys) + untuple(rows)
         self.c.execute(qrystr, qrylst)
         return self.c.fetchall()
+
+    def things_in_place(self, place):
+        dim = place.dimension
+        pname = place.name
+        pcd = self.placecontentsdict
+        if dim not in pcd or pname not in pcd[dim]:
+            return []
+        thingnames = self.placecontentsdict[dim][pname]
+        return [self.thingdict[dim][name] for name in thingnames]
+
+    def inverse_portal(self, portal):
+        orign = portal.orig.name
+        destn = portal.dest.name
+        pdod = self.portaldestorigdict[portal.dimension]
+        try:
+            return pdod[orign][destn]
+        except:
+            return None
