@@ -18,11 +18,22 @@ sys.path.append(os.curdir)
 defaultCommit = True
 
 
-def qrystr_insert_into(tabname, tuplst):
-    q = ["?"] * len(tuplst[0])
-    qs = "(" + ", ".join(q) + ")"
-    qm = [qs] * len(tuplst)
-    return "INSERT INTO " + tabname + " VALUES " + ", ".join(qm) + ";"
+def untuple(list_o_tups):
+    r = []
+    for tup in list_o_tups:
+        for val in tup:
+            r.append(val)
+    return r
+
+
+def questionmarks(list_o_tups):
+    q = "(" + ", ".join(["?"] * len(list_o_tups[0])) + ")"
+    return [q] * len(list_o_tups)
+
+
+def insstr(tabname, list_o_tups):
+    return "INSERT INTO " + tabname + " VALUES " +\
+        ", ".join(questionmarks(list_o_tups)) + ";"
 
 
 class Database:
@@ -58,16 +69,6 @@ class Database:
         self.c.close()
         self.conn.commit()
         self.conn.close()
-
-    def _write_all(self, qrystr, qrytups):
-        qrylst = []
-        for tup in qrytups:
-            qrylst += tup
-        self.c.execute(qrystr, qrylst)
-
-    def _insert_all(self, tabname, qrytups):
-        qrystr = qrystr_insert_into(tabname, qrytups)
-        self._write_all(qrystr, qrytups)
 
     def mkschema(self):
         for tab in tables:
@@ -123,29 +124,42 @@ class Database:
         pass
         # TODO: write all altered objects to disk
 
+    def insert_1(self, tabname, default_list):
+        qm = ["?"] * len(default_list)
+        qrystr = "INSERT INTO %s VALUES (" % (tabname,) + ", ".join(qm) + ")"
+        self.c.execute(qrystr, default_list)
+
+    def insert_n(self, tabname, tups):
+        qm = ", ".join(["?"] * len(tups[0]))
+        qrystr = "INSERT INTO %s VALUES (%s);" % (tabname, qm)
+        self.c.executemany(qrystr, tups)
+
+    def insert(self, tabname, tups):
+        self.insert_n(tabname, tups)
+
     def insert_defaults(self):
         # dimensions first because a lot of other stuff requires them
-        self._insert_all("dimension", (default.dimensions,))
+        self.insert_1("dimension", default.dimensions)
         # items
-        self._insert_all("item", default.things)
-        self._insert_all("item", default.places)
+        self.insert("item", default.things)
+        self.insert("item", default.places)
         portalkeys = [portal[:2] for portal in default.portals]
-        self._insert_all("item", portalkeys)
-        self._insert_all("thing", default.things)
-        self._insert_all("place", default.places)
-        self._insert_all("portal", default.portals)
-        self._insert_all("location", default.locations)
-        self._insert_all("containment", default.containments)
-        self._insert_all("journey_step", default.steps)
-        self._insert_all("img", default.imgs)
-        self._insert_all("spot", default.spots)
-        self._insert_all("pawn", default.pawns)
-        self._insert_all("menuitem", default.menuitems)
-        self._insert_all("color", default.colors)
-        self._insert_all("style", default.styles)
-        self._insert_all("menu", default.menus)
-        self._insert_all("board", default.boards)
-        self._insert_all("boardmenu", default.boardmenu)
+        self.insert("item", portalkeys)
+        self.insert("thing", default.things)
+        self.insert("place", default.places)
+        self.insert("portal", default.portals)
+        self.insert("location", default.locations)
+        self.insert("containment", default.containments)
+        self.insert("journey_step", default.steps)
+        self.insert("img", default.imgs)
+        self.insert("spot", default.spots)
+        self.insert("pawn", default.pawns)
+        self.insert("menuitem", default.menuitems)
+        self.insert("color", default.colors)
+        self.insert("style", default.styles)
+        self.insert("menu", default.menus)
+        self.insert("board", default.boards)
+        self.insert("boardmenu", default.boardmenu)
         # functions
         for func in default.funcs:
             self.xfunc(func)
@@ -243,7 +257,6 @@ class Database:
                 else:
                     menuitem.board = board
         self.boarddict[dimension] = board
-        self.dimdict[dimension] = Dimension(dimension, places, portals)
         return board
 
     def load_menus_for_board(self, board):
@@ -251,8 +264,7 @@ class Database:
         self.c.execute(qrystr, (board,))
         menunames = [row[0] for row in self.c]
         qm = ["?"] * len(menunames)
-        qrystr = "SELECT name, x, y, width, height, style, "\
-                 "visible, interactive "\
+        qrystr = "SELECT name, left, bottom, top, right, style, visible "\
                  "FROM menu WHERE name IN (" + ", ".join(qm) + ");"
         self.c.execute(qrystr, menunames)
         menurows = self.c.fetchall()
@@ -288,7 +300,7 @@ class Database:
         if board not in self.menudict:
             self.menudict[board] = {}
         for row in menurows:
-            (name, x, y, w, h, sty, vis, inter) = row
+            (name, x, y, w, h, sty, vis) = row
             menunames.add(name)
             style = self.styledict[sty]
             menu = Menu(board, name, x, y, w, h, style, vis)
@@ -480,3 +492,76 @@ visibility of the given menu on the given board.
         (boardname, menuname) = stringly.split('.')
         menu = self.menudict[boardname][menuname]
         menu.toggle_visibility()
+
+    def insert_things(self, things):
+        thingrows = [tuple(it) for it in things]
+        self.insert_rows("thing", thingrows)
+
+    def insert_places(self, places):
+        placerows = [tuple(it) for it in places]
+        self.insert_rows("place", placerows)
+
+    def insert_portals(self, ports):
+        portrows = [tuple(it) for it in ports]
+        self.insert_rows("portal", portrows)
+
+    def insert_pawns(self, pawns):
+        pawnrows = [tuple(it) for it in pawns]
+        self.insert_rows("pawn", pawnrows)
+
+    def insert_spots(self, spots):
+        spotrows = [tuple(it) for it in spots]
+        self.insert_rows("spot", spotrows)
+
+    def insert_rows(self, tabname, rows):
+        qrystr = insstr(tabname, rows)
+        qrylst = untuple(rows)
+        self.c.execute(qrystr, qrylst)
+
+    def keys_known(self, tabname, keynames, keys):
+        # Return a sublist of keys containing those keys that are
+        # already in the table by the given name, tabname.
+        keynamesstr = ", ".join(keynames)
+        qrystr = ("SELECT " + keynamesstr + " FROM " + tabname +
+                  " WHERE (" + keynamesstr + ") IN ("
+                  + questionmarks(keys) + ");")
+        qrylst = untuple(keys)
+        self.c.execute(qrystr, qrylst)
+        return self.c.fetchall()
+
+    def keys_unknown(self, tabname, keynames, keys):
+        keys_known = self.keys_known(tabname, keynames, keys)
+        keys_known_set = set(keys_known)
+        test_keys_set = set(keys)
+        keys_unknown_set = test_keys_set.difference(keys_known_set)
+        return iter(keys_unknown_set)
+
+    def keys_known_not_loaded(self, tabname, keynames, keys_loaded):
+        # This will most likely be used for finding keys to delete.
+        keynamesstr = ", ".join(keynames)
+        qrystr = ("SELECT " + keynamesstr + " FROM " + tabname +
+                  " WHERE (" + keynamesstr + ") NOT IN (" +
+                  questionmarks(keys_loaded) + ");")
+        qrylst = untuple(keys_loaded)
+        self.c.execute(qrystr, qrylst)
+
+    def rows_missing(self, tabname, keynames, rows):
+        keylen = len(keynames)
+        key2row = dict([(row[:keylen], row) for row in rows])
+        keys = key2row.keys()
+        keys_missing = self.keys_unknown(tabname, keynames, keys)
+        return [key2row[key] for key in keys_missing]
+
+    def rows_different(self, tabname, keynames, valnames, rows):
+        keylen = len(keynames)
+        keys = [row[:keylen] for row in rows]
+        keys_qm = questionmarks(keys)
+        rows_qm = questionmarks(rows)
+        keyvalstr = ", ".join(keynames + valnames)
+        keystr = ", ".join(keynames)
+        qrystr = ("SELECT " + keyvalstr + " FROM " + tabname +
+                  " WHERE (" + keystr + ") IN (" + keys_qm +
+                  ") AND (" + keyvalstr + ") NOT IN (" + rows_qm + ");")
+        qrylst = untuple(keys) + untuple(rows)
+        self.c.execute(qrystr, qrylst)
+        return self.c.fetchall()

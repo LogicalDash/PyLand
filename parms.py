@@ -164,11 +164,47 @@ class DefaultParameters:
         self.funcs = funcs
         # I'm going to have the menu bar on the left of the
         # screen. For convenience.
-        self.menus = [('Game', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
-                      ('Editor', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
-                      ('Place', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
-                      ('Thing', 0.1, 0.3, 1.0, 0.2, 'Small', False, True),
-                      ('Main', 0.0, 0.0, 1.0, 0.12, 'Big', True, True)]
+        gamemenu = {'name': 'Game',
+                      'left': 0.1,
+                      'bottom': 0.3,
+                      'top': 1.0,
+                      'right': 0.2,
+                      'style': 'Small',
+                      'visible': False,}
+        editormenu = {'name': 'Editor',
+                      'left': 0.1,
+                      'bottom': 0.3,
+                      'top': 1.0,
+                      'right': 0.2,
+                      'style': 'Small',
+                      'visible': False,}
+        placemenu = {'name': ,
+                      'left': ,
+                      'bottom': ,
+                      'top': ,
+                      'right': ,
+                      'style': ,
+                      'visible': ,}
+        thingmenu = {'name': ,
+                      'left': ,
+                      'bottom': ,
+                      'top': ,
+                      'right': ,
+                      'style': ,
+                      'visible': ,}
+        mainmenu = {'name': ,
+                      'left': ,
+                      'bottom': ,
+                      'top': ,
+                      'right': ,
+                      'style': ,
+                      'visible': ,}
+        self.menus = 
+# [('Game', 0.1, 0.3, 1.0, 0.2, 'Small', False),
+#  ('Editor', 0.1, 0.3, 1.0, 0.2, 'Small', False),
+#  ('Place', 0.1, 0.3, 1.0, 0.2, 'Small', False),
+#  ('Thing', 0.1, 0.3, 1.0, 0.2, 'Small', False),
+#  ('Main', 0.0, 0.0, 1.0, 0.12, 'Big', True)]
         menunames = [tup[0] for tup in self.menus]
         self.menuitems = []
         i = 0

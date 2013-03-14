@@ -1,6 +1,7 @@
 # This file is for the controllers for the things that show up on the
 # screen when you play.
 import pyglet
+from util import genschema
 
 
 class Color:
@@ -11,16 +12,18 @@ class Color:
     get a particular element by name rather than number.
 
     """
-    table_schema = ("CREATE TABLE color "
-                    "(name text primary key, "
-                    "red integer not null "
-                    "check(red between 0 and 255), "
-                    "green integer not null "
-                    "check(green between 0 and 255), "
-                    "blue integer not null "
-                    "check(blue between 0 and 255), "
-                    "alpha integer default 255 "
-                    "check(alpha between 0 and 255));")
+    keydecldict = {'name': 'text primary key'}
+    valdecldict = {'red': 'integer not null '
+                   'check(red between 0 and 255)',
+                   'green': 'integer not null '
+                   'check(green between 0 and 255)',
+                   'blue': 'integer not null '
+                   'check(blue between 0 and 255)',
+                   'alpha': 'integer default 255 '
+                   'check(alpha between 0 and 255)'}
+    table_schema = genschema("color", keydecldict, valdecldict)
+    keynames = keydecldict.keys()
+    valnames = valdecldict.keys()
 
     def __init__(self, name, r=0, g=0, b=0, a=255):
         self.name = name
@@ -31,13 +34,27 @@ class Color:
         self.tup = (r, g, b, a)
         self.pattern = pyglet.image.SolidColorImagePattern(self.tup)
 
+    def __iter__(self):
+        return self.tup
+
+    def __str__(self):
+        return "(" + ", ".join(self.tup) + ")"
+
 
 class MenuItem:
-    table_schema = ("CREATE TABLE menuitem (menu text, idx integer, "
-                    "text text, onclick text, onclick_arg text, "
-                    "closer boolean, visible boolean, interactive boolean, "
-                    "foreign key(menu) references menu(name), "
-                    "primary key(menu, idx));")
+    keydecldict = {'menu': 'text',
+                   'idx': 'integer'}
+    valdecldict = {'text': 'text',
+                   'onclick': 'text',
+                   'onclick_arg': 'text',
+                   'closer': 'boolean',
+                   'visible': 'boolean',
+                   'interactive': 'boolean'}
+    suffix = ("foreign key(menu) references menu(name), "
+              "primary key(menu, idx)")
+    table_schema = genschema("menuitem", keydecldict, valdecldict, suffix)
+    keynames = keydecldict.keys()
+    valnames = valdecldict.keys()
 
     def __init__(self, board, menu, idx, text, onclick, onclick_arg,
                  closer=True, visible=False, interactive=True):
@@ -52,6 +69,12 @@ class MenuItem:
         self.interactive = interactive
         self.height = menu.style.fontsize + menu.style.spacing
         self.hovered = False
+
+    def __iter__(self):
+        return (self.menu.name, self.idx,
+                self.text, self.onclick_core.__name__,
+                self.onclick_arg, self.closer,
+                self.visible, self.interactive)
 
     def __eq__(self, other):
         if isinstance(other, str):
@@ -80,9 +103,6 @@ class MenuItem:
         return self.text <= other.text
 
     def __repr__(self):
-        return self.text
-
-    def __str__(self):
         return self.text
 
     def getleft(self):
@@ -116,16 +136,17 @@ class MenuItem:
 
 
 class Menu:
-    table_schema = ("CREATE TABLE menu "
-                    "(name text primary key, "
-                    "x float not null, "
-                    "y float not null, "
-                    "width float not null, "
-                    "height float not null, "
-                    "style text default 'Default', "
-                    "visible boolean default 0, "
-                    "interactive boolean default 1, "
-                    "foreign key(style) references style(name));")
+    keydecldict = {'name': 'text primary key'}
+    valdecldict = {'left': 'float not null',
+                   'bottom': 'float not null',
+                   'top': 'float not null',
+                   'right': 'float not null',
+                   'style': "text default 'Default'",
+                   "visible": "boolean default 0"}
+    table_schema = genschema("menu", keydecldict, valdecldict,
+                             "foreign key(style) references style(name)")
+    keynames = keydecldict.keys()
+    valnames = valdecldict.keys()
 
     def __init__(self, board, name,
                  left, bottom, top, right, style, visible):
@@ -139,12 +160,14 @@ class Menu:
         self.items = []
         self._scrolled_to = 0
         self.visible = visible
-        self.interactive = True
-        self.hovered = False
         # In order to actually draw these things you need to give them
         # an attribute called window, and it should be a window of the
         # pyglet kind. It isn't in the constructor because that would
         # make loading inconvenient.
+
+    def __iter__(self):
+        return (self.name, self.left, self.bottom, self.top,
+                self.right, self.style.name, self.visible)
 
     def __getitem__(self, i):
         return self.items.__getitem__(i)
@@ -190,15 +213,23 @@ class Spot:
     place; at the given x and y coordinates on the screen; in the
     given graph of Spots. The Spot will be magically connected to the other
     Spots in the same way that the underlying Places are connected."""
-    table_schema = ("CREATE TABLE spot "
-                    "(dimension, place, img, x, y, "
-                    "visible boolean, interactive boolean, "
-                    "foreign key(dimension, place) "
-                    "references place(dimension, name), "
-                    "foreign key(img) references img(name), "
-                    "primary key(dimension, place));")
+    keydecldict = {"dimension": "text",
+                   "place": "text"}
+    valdecldict = {"img": "text",
+                   "x": "integer",
+                   "y": "integer",
+                   "visible": "boolean",
+                   "interactive": "boolean"}
+    suffix = ("foreign key(dimension, place) "
+              "references place(dimension, name), "
+              "foreign key(img) references img(name), "
+              "primary key(dimension, place)")
+    table_schema = genschema("spot", keydecldict, valdecldict, suffix)
+    keynames = keydecldict.keys()
+    valnames = valdecldict.keys()
 
     def __init__(self, dimension, place, img, x, y, visible, interactive):
+        self.dimension = dimension
         self.place = place
         self.x = x
         self.y = y
@@ -206,9 +237,9 @@ class Spot:
         self.visible = visible
         self.interactive = interactive
 
-    def __str__(self):
-        coords = "(%i,%i)" % (self.x, self.y)
-        return "Spot at " + coords + " representing " + str(self.place)
+    def __iter__(self):
+        return (self.dimension, self.place.name, self.img.name, self.x,
+                self.y, self.visible, self.interactive)
 
     def __repr__(self):
         return "spot(%i,%i)->%s" % (self.x, self.y, str(self.place))
@@ -227,9 +258,6 @@ class Spot:
 
     def gettup(self):
         return (self.img, self.getleft(), self.getbot())
-
-    def __iter__(self):
-        return iter([self.img, self.getleft(), self.getbot()])
 
     def is_visible(self):
         return self.visible
@@ -256,20 +284,30 @@ class Pawn:
     nebulous dimension between Places.
 
     """
-    table_schema = ("CREATE TABLE pawn "
-                    "(dimension, thing, img, visible, interactive, "
-                    "foreign key(img) references img(name), "
-                    "foreign key(dimension, thing) "
-                    "references thing(dimension, name), "
-                    "primary key(dimension, thing));")
+    keydecldict = {"dimension": "text",
+                   "thing": "text"}
+    valdecldict = {"img": "text",
+                   "visible": "boolean",
+                   "interactive": "boolean"}
+    suffix = ("foreign key(img) references img(name), "
+              "foreign key(dimension, thing) "
+              "references thing(dimension, name), "
+              "primary key(dimension, thing)")
+    table_schema = genschema("pawn", keydecldict, valdecldict, suffix)
+    keynames = keydecldict.keys()
+    valnames = valdecldict.keys()
 
-    def __init__(self, board, thing, img, visible, interactive):
-        self.board = board
+    def __init__(self, dimension, thing, img, visible, interactive):
+        self.dimension = dimension
         self.thing = thing
         self.img = img
         self.visible = visible
         self.interactive = interactive
         self.hovered = False
+
+    def __iter__(self):
+        return (self.dimension, self.thing.name, self.img.name,
+                self.visible, self.interactive)
 
     def getcoords(self):
         # Assume I've been provided a spotdict. Use it to get the
@@ -325,13 +363,15 @@ class Pawn:
 
 
 class Board:
-    table_schema = ("CREATE TABLE board "
-                    "(dimension primary key, "
-                    "width integer, "
-                    "height integer, "
-                    "wallpaper, "
-                    "foreign key(dimension) references dimension(name), "
-                    "foreign key(wallpaper) references image(name));")
+    keydecldict = {"dimension": "text primary key"}
+    valdecldict = {"width": "integer",
+                   "height": "integer",
+                   "wallpaper": "text"}
+    suffix = ("foreign key(dimension) references dimension(name), "
+              "foreign key(wallpaper) references image(name)")
+    table_schema = genschema("board", keydecldict, valdecldict, suffix)
+    keynames = keydecldict.keys()
+    valnames = valdecldict.keys()
 
     def __init__(self, dimension, width, height, image,
                  spots=[], pawns=[], menus=[]):
@@ -343,16 +383,16 @@ class Board:
         self.pawns = pawns
         self.menus = menus
 
+    def __iter__(self):
+        return (self.dimension, self.width, self.height, self.img.name)
+
     def getwidth(self):
         return self.width
 
     def getheight(self):
         return self.height
 
-    def getmap(self):
-        return self.mapobj
-
-    def __str__(self):
+    def __repr__(self):
         return "A board, %d pixels wide by %d tall, representing the "\
             "dimension %s, containing %d spots, %d pawns, and %d menus."\
             % (self.width, self.height, self.dimension, len(self.spots),
@@ -360,19 +400,21 @@ class Board:
 
 
 class Style:
-    table_schema = ("CREATE TABLE style "
-                    "(name text primary key, "
-                    "fontface text not null, "
-                    "fontsize integer not null, "
-                    "spacing integer default 6, "
-                    "bg_inactive text not null, "
-                    "bg_active text not null, "
-                    "fg_inactive text not null, "
-                    "fg_active text not null, "
-                    "foreign key(bg_inactive) references color(name), "
-                    "foreign key(bg_active) references color(name), "
-                    "foreign key(fg_inactive) references color(name), "
-                    "foreign key(fg_active) references color(name));")
+    keydecldict = {"name": "text primary key"}
+    valdecldict = {"fontface": "text not null",
+                   "fontsize": "integer not null",
+                   "spacing": "integer default 6",
+                   "bg_inactive": "text not null",
+                   "bg_active": "text not null",
+                   "fg_inactive": "text not null",
+                   "fg_active": "text not null"}
+    suffix = ("foreign key(bg_inactive) references color(name), "
+              "foreign key(bg_active) references color(name), "
+              "foreign key(fg_inactive) references color(name), "
+              "foreign key(fg_active) references color(name)")
+    table_schema = genschema("style", keydecldict, valdecldict, suffix)
+    keynames = keydecldict.keys()
+    valnames = valdecldict.keys()
 
     def __init__(self, name, fontface, fontsize, spacing,
                  bg_inactive, bg_active, fg_inactive, fg_active):
@@ -384,6 +426,11 @@ class Style:
         self.bg_active = bg_active
         self.fg_inactive = fg_inactive
         self.fg_active = fg_active
+
+    def __iter__(self):
+        return (self.name, self.fontface, self.fontsize, self.spacing,
+                self.bg_inactive.name, self.bg_active.name,
+                self.fg_inactive.name, self.fg_active.name)
 
 
 classes = [Color, MenuItem, Menu, Spot, Pawn, Board, Style]

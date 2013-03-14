@@ -1,4 +1,5 @@
 import igraph
+from util import genschema
 
 
 class Journey:
@@ -146,18 +147,20 @@ class Portal:
                     "primary key(dimension, name), "
                     "check(from_place<>to_place));")
 
-    def __init__(self, dimension, name, origin, destination, attributes={}):
+    def __init__(self, dimension, name, origin, destination):
         self.dimension = dimension
         self.name = name
         self.dest = destination
         self.orig = origin
-        self.att = attributes
+
+    def __iter__(self):
+        return (self.dimension, self.name, self.orig.name, self.dest.name)
 
     def __repr__(self):
         return self.name
 
     def __str__(self):
-        return self.name
+        return "(" + ", ".join(self) + ")"
 
     def __eq__(self, other):
         return self.name == other.name
@@ -206,6 +209,9 @@ class Place:
         self.contents = contents
         self.portals = portals
 
+    def __iter__(self):
+        return (self.dimension, self.name)
+
     def addthing(self, item):
         for test in self.entrytests:
             if not test(item):
@@ -222,7 +228,7 @@ class Place:
         return self.name
 
     def __str__(self):
-        return self.name
+        return "(" + ", ".join(self) + ")"
 
     def __eq__(self, other):
         # The name is the key in the database. Must be unique.
@@ -230,13 +236,18 @@ class Place:
 
 
 class Dimension:
-    table_schema = ("CREATE TABLE dimension "
-                    "(name text primary key);")
+    keydecldict = {"name": "text primary key"}
+    table_schema = genschema("dimension", keydecldict, {})
+    keynames = keydecldict.keys()
+    valnames = []
 
     def __init__(self, name, places=[], portals=[]):
         self.name = name
         self.places = places
         self.portals = portals
+
+    def __str__(self):
+        return "(" + self.name + ")"
 
     def add_place(self, place):
         self.places.append(place)

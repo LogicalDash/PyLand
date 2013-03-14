@@ -17,6 +17,12 @@ class Thing:
         self.permit_inspections = []
         self.forbid_inspections = []
 
+    def __str__(self):
+        return "(%s, %s)" % (self.dimension, self.name)
+
+    def __iter__(self):
+        return (self.dimension, self.name)
+
     def __repr__(self):
         if self.location is None:
             loc = "nowhere"
