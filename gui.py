@@ -44,7 +44,7 @@ class GameWindow:
         self.view_left = 0
         self.view_bot = 0
 
-        self.to_mouse = self.board.pawns + self.board.spots
+        self.to_mouse = list(self.board.pawns) + list(self.board.spots)
         for menu in self.board.menus:
             self.to_mouse.extend(menu.items)
 
@@ -83,11 +83,12 @@ class GameWindow:
 
         self.drawn = {"edges": {}}
 
-        self.menus_changed = copy(self.board.menus)
-        self.pawns_changed = copy(self.board.pawns)
-        self.spots_changed = copy(self.board.spots)
+        self.menus_changed = [menu for menu in self.board.menus]
+        self.pawns_changed = [pawn for pawn in self.board.pawns]
+        self.spots_changed = [spot for spot in self.board.spots]
 
     def add_stuff_to_batch(self):
+        self.window.clear()
         old = set()
         newmenus = []
         newmenuitems = []
@@ -135,7 +136,7 @@ class GameWindow:
 
     def toggle_menu_visibility_by_name(self, name):
         self.db.toggle_menu_visibility(self.board.dimension + '.' + name)
-        return self.db.menudict[self.board.dimension][name]
+        return self.db.boardmenudict[self.board.dimension][name]
 
     def on_key_press(self, key, mods):
         pass
@@ -147,6 +148,8 @@ class GameWindow:
             self.menus_changed.append(it)
         elif isinstance(it, Spot):
             self.spots_changed.append(it)
+            alsopawns = self.db.pawns_on_spot(it)
+            self.pawns_changed.extend(alsopawns)
         elif isinstance(it, Pawn):
             self.pawns_changed.append(it)
         else:

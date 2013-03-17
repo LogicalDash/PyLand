@@ -1,19 +1,17 @@
 from attrcheck import AttrCheck
-from util import gentable
 
 
 class Thing:
+    tabname = "thing"
     keydecldict = {"dimension": "text",
                    "name": "text"}
     valdecldict = {}
-    (keynames, valnames, colnames, schema) = gentable(
-        "thing", keydecldict, valdecldict)
 
-    def __init__(self, dimension, name, location, contents=[]):
-        self.dimension = dimension
-        self.name = name
-        self.location = location
-        self.contents = contents
+    def __init__(self, db, rowdict):
+        self.dimension = rowdict["dimension"]
+        self.name = rowdict["name"]
+        self.location = None
+        self.contents = []
         self.permissions = []
         self.forbiddions = []
         self.permit_inspections = []
@@ -80,6 +78,3 @@ class Thing:
 # items who want to enter to make sure they pass.
 #
 # TODO: subclasses of thing to differentiate between things and other things
-
-classes = [Thing]
-table_schemata = [clas.schema for clas in classes]

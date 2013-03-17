@@ -9,9 +9,556 @@ import sys
 import os
 from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
-from graph import Journey, Dimension, Place, Portal
+from graph import Dimension, Journey, Place, Portal
 from pyglet.resource import image
-from parms import default
+
+
+### Default values for every damn table in the database, placed here
+### because the import stopped working when I got all recursive 'n
+### shit
+
+
+def start_new_map(nope):
+    pass
+
+
+def open_map(nope):
+    pass
+
+
+def save_map(nope):
+    pass
+
+
+def quit_map_editor(nope):
+    pass
+
+
+def editor_select(nope):
+    pass
+
+
+def editor_copy(nope):
+    pass
+
+
+def editor_paste(nope):
+    pass
+
+
+def editor_delete(nope):
+    pass
+
+
+def new_place(place_type):
+    pass
+
+
+def new_thing(thing_type):
+    pass
+
+
+funcs = [start_new_map, open_map, save_map, quit_map_editor, editor_select,
+         editor_copy, editor_paste, editor_delete, new_place, new_thing]
+
+
+game_menu_items = {'New': ('start_new_map', None),
+                   'Open': ('open_map', None),
+                   'Save': ('save_map', None),
+                   'Quit': ('quit_map_editor', None)}
+editor_menu_items = {'Select': ('editor_select', None),
+                     'Copy': ('editor_copy', None),
+                     'Paste': ('editor_paste', None),
+                     'Delete': ('editor_delete', None)}
+place_menu_items = {'Custom Place': ('new_place', 'custom'),
+                    'Workplace': ('new_place', 'workplace'),
+                    'Commons': ('new_place', 'commons'),
+                    'Lair': ('new_place', 'lair')}
+thing_menu_items = {'Custom Thing': ('new_thing', 'custom'),
+                    'Decoration': ('new_thing', 'decoration'),
+                    'Clothing': ('new_thing', 'clothing'),
+                    'Tool': ('new_thing', 'tool')}
+main_menu_items = {'Game': ('toggle_menu_visibility_by_name', 'Game'),
+                   'Editor': ('toggle_menu_visibility_by_name', 'Editor'),
+                   'Place': ('toggle_menu_visibility_by_name', 'Place'),
+                   'Thing': ('toggle_menu_visibility_by_name', 'Thing')}
+
+
+solarized_colors = {'base03': (0x00, 0x2b, 0x36),
+                    'base02': (0x07, 0x36, 0x42),
+                    'base01': (0x58, 0x6e, 0x75),
+                    'base00': (0x65, 0x7b, 0x83),
+                    'base0': (0x83, 0x94, 0x96),
+                    'base1': (0x93, 0xa1, 0xa1),
+                    'base2': (0xee, 0xe8, 0xd5),
+                    'base3': (0xfd, 0xf6, 0xe3),
+                    'yellow': (0xb5, 0x89, 0x00),
+                    'orange': (0xcb, 0x4b, 0x16),
+                    'red': (0xdc, 0x32, 0x2f),
+                    'magenta': (0xd3, 0x36, 0x82),
+                    'violet': (0x6c, 0x71, 0xc4),
+                    'blue': (0x26, 0x8b, 0xd2),
+                    'cyan': (0x2a, 0xa1, 0x98),
+                    'green': (0x85, 0x99, 0x00)}
+
+
+placenames = ['myroom',
+              'guestroom',
+              'mybathroom',
+              'diningoffice',
+              'kitchen',
+              'livingroom',
+              'longhall',
+              'momsbathroom',
+              'momsroom',
+              'outside']
+
+
+atts = [('life', 'bool'),
+        ('bulk', 'int', [], 0),
+        ('grams', 'float', [], 0.0),
+        ('stickiness', 'int', [], -10, 10),
+        ('grade level', 'int',
+         ['Preschool', 'Kindergarten', 'Post-secondary'],
+         1, 12)]
+
+
+def reciprocate(porttup):
+    return (porttup[1], porttup[0])
+
+
+def reciprocate_all(porttups):
+    return [reciprocate(port) for port in porttups]
+
+
+def reciprocal_pairs(pairs):
+    return pairs + [reciprocate(pair) for pair in pairs]
+
+
+class DefaultParameters:
+    def addstub(self, stub):
+        exec('def %s():\n\tpass\n\nself.stubs["%s"]=%s' % (stub, stub, stub))
+
+    def __init__(self):
+        self.dimensions = [{"name": "Physical"}]
+        self.funcs = funcs
+        # I'm going to have the menu bar on the left of the
+        # screen. For convenience.
+        gamemenu = {'name': 'Game',
+                    'left': 0.1,
+                    'bottom': 0.3,
+                    'top': 1.0,
+                    'right': 0.2,
+                    'style': 'Small',
+                    'visible': False}
+        editormenu = {'name': 'Editor',
+                      'left': 0.1,
+                      'bottom': 0.3,
+                      'top': 1.0,
+                      'right': 0.2,
+                      'style': 'Small',
+                      'visible': False}
+        placemenu = {'name': 'Place',
+                     'left': 0.1,
+                     'bottom': 0.3,
+                     'top': 1.0,
+                     'right': 0.2,
+                     'style': 'Small',
+                     'visible': False}
+        thingmenu = {'name': 'Thing',
+                     'left': 0.1,
+                     'bottom': 0.3,
+                     'top': 1.0,
+                     'right': 0.2,
+                     'style': 'Small',
+                     'visible': False}
+        mainmenu = {'name': 'Main',
+                    'left': 0.0,
+                    'bottom': 0.0,
+                    'top': 1.0,
+                    'right': 0.12,
+                    'style': 'Big',
+                    'visible': True}
+        self.menus = [gamemenu, editormenu, placemenu, thingmenu, mainmenu]
+        menunames = [menud["name"] for menud in self.menus]
+
+        def mkmenuitemd(menu, idx, text, onclick, onclick_arg,
+                        closer, visible, interactive):
+            return {'menu': menu,
+                    'idx': idx,
+                    'text': text,
+                    'onclick': onclick,
+                    'onclick_arg': onclick_arg,
+                    'closer': closer,
+                    'visible': visible,
+                    'interactive': interactive}
+        self.menuitems = []
+        i = 0
+        for item in game_menu_items.iteritems():
+            self.menuitems.append(
+                mkmenuitemd('Game', i,
+                            item[0], item[1][0], item[1][1],
+                            True, True, True))
+            i += 1
+        i = 0
+        for item in editor_menu_items.iteritems():
+            self.menuitems.append(
+                mkmenuitemd('Editor', i, item[0],
+                            item[1][0], item[1][1],
+                            True, True, True))
+            i += 1
+        i = 0
+        for item in place_menu_items.iteritems():
+            self.menuitems.append(
+                mkmenuitemd('Place', i,
+                            item[0], item[1][0], item[1][1],
+                            True, True, True))
+            i += 1
+        i = 0
+        for item in thing_menu_items.iteritems():
+            self.menuitems.append(
+                mkmenuitemd('Thing', i,
+                            item[0], item[1][0], item[1][1],
+                            True, True, True))
+            i += 1
+        i = 0
+        for item in main_menu_items.iteritems():
+            self.menuitems.append(
+                mkmenuitemd('Main', i,
+                            item[0], item[1][0], item[1][1],
+                            False, True, True))
+            i += 1
+
+        def mkcolord(name, red, green, blue, alpha):
+            return {'name': name,
+                    'red': red,
+                    'green': green,
+                    'blue': blue,
+                    'alpha': alpha}
+
+        def mkstyled(name, fontface, fontsize, spacing,
+                     bg_inactive, bg_active,
+                     fg_inactive, fg_active):
+            return {'name': name,
+                    'fontface': fontface,
+                    'fontsize': fontsize,
+                    'spacing': spacing,
+                    'bg_inactive': bg_inactive,
+                    'bg_active': bg_active,
+                    'fg_inactive': fg_inactive,
+                    'fg_active': fg_active}
+
+        self.colors = [
+            mkcolord(
+                'solarized-' + color[0],
+                color[1][0], color[1][1],
+                color[1][2], 255)
+            for color in solarized_colors.iteritems()]
+        self.styles = [
+            mkstyled(
+                'Big',
+                'DejaVu Sans', 16, 6,
+                'solarized-base03',
+                'solarized-base2',
+                'solarized-base1',
+                'solarized-base01'),
+            mkstyled(
+                'Small',
+                'DejaVu Sans', 12, 3,
+                'solarized-base03',
+                'solarized-base2',
+                'solarized-base1',
+                'solarized-base01')]
+
+        def mkitemd(dimension, name):
+            return {'dimension': dimension,
+                    'name': name}
+
+        self.places = [mkitemd('Physical', p) for p in placenames]
+        rpos = [('myroom', 'guestroom'),
+                ('myroom', 'mybathroom'),
+                ('myroom', 'outside'),
+                ('myroom', 'diningoffice'),
+                ('myroom', 'livingroom'),
+                ('guestroom', 'diningoffice'),
+                ('guestroom', 'livingroom'),
+                ('guestroom', 'mybathroom'),
+                ('livingroom', 'diningoffice'),
+                ('diningoffice', 'kitchen'),
+                ('livingroom', 'longhall'),
+                ('longhall', 'momsbathroom'),
+                ('longhall', 'momsroom')]
+        nrpos = [('guestroom', 'outside'),
+                 ('diningoffice', 'outside'),
+                 ('momsroom', 'outside')]
+        pos = reciprocal_pairs(rpos) + nrpos
+
+        def mkportald(dimension, orig, dest):
+            return {'dimension': dimension,
+                    'name': "portal[%s->%s]" % (orig, dest),
+                    'from_place': orig,
+                    'to_place': dest}
+
+        self.portals = [mkportald('Physical', po[0], po[1]) for po in pos]
+        ths = [('me', 'myroom'),
+               ('diningtable', 'diningoffice'),
+               ('mydesk', 'myroom'),
+               ('mybed', 'myroom'),
+               ('bustedchair', 'myroom'),
+               ('sofas', 'livingroom'),
+               ('fridge', 'kitchen'),
+               ('momsbed', 'momsroom'),
+               ('mom', 'momsroom')]
+        self.things = [mkitemd('Physical', th[0]) for th in ths]
+
+        def mklocd(dimension, thing, place):
+            return {'dimension': dimension,
+                    'thing': thing,
+                    'place': place}
+
+        self.locations = [mklocd('Physical', th[0], th[1]) for th in ths]
+        mjos = ["portal[momsroom->longhall]",
+                "portal[longhall->livingroom]",
+                "portal[livingroom->diningoffice]",
+                "portal[diningoffice->outside]"]
+        steps_to_kitchen = [('Physical', 'me',  0,
+                             'portal[myroom->diningoffice]'),
+                            ('Physical', 'me', 1,
+                             'portal[diningoffice->kitchen]')]
+        steps_outside = []
+        i = 0
+        while i < len(mjos):
+            steps_outside.append(('Physical', 'mom', i, mjos[i]))
+            i += 1
+
+        def mkstepd(dimension, thing, idx, portal):
+            return {"dimension": dimension,
+                    "thing": thing,
+                    "idx": idx,
+                    "portal": portal}
+
+        def mkjourneyd(dimension, thing, step, progress):
+            return {"dimension": dimension,
+                    "thing": thing,
+                    "curstep": step,
+                    "progress": progress}
+
+        self.steps = [mkstepd(*step)
+                      for step in steps_to_kitchen + steps_outside]
+
+        self.journeys = [
+            {"dimension": "Physical",
+             "thing": "me",
+             "curstep": 0,
+             "progress": 0.0},
+            {"dimension": "Physical",
+             "thing": "mom",
+             "curstep": 0,
+             "progress": 0.0}]
+
+        def mkcontd(dimension, contained, container):
+            # I have not made any containments yet
+            return {"dimension": dimension,
+                    "contained": contained,
+                    "container": container}
+
+        self.containments = []
+
+        def mkboardd(dimension, width, height, wallpaper):
+            return {"dimension": dimension,
+                    "width": width,
+                    "height": height,
+                    "wallpaper": wallpaper}
+
+        self.boards = [mkboardd('Physical', 800, 600, 'wall')]
+
+        def mkboardmenud(board, menu):
+            return {"board": board,
+                    "menu": menu}
+
+        self.boardmenu = [mkboardmenud('Physical', menuname)
+                          for menuname in menunames]
+
+        def mkimgd(name, path, rltile):
+            return {"name": name,
+                    "path": path,
+                    "rltile": rltile}
+
+        imgtups = [("troll_m", "rltiles/player/base/troll_m.bmp", True),
+                   ("zruty", "rltiles/nh-mon0/z/zruty.bmp", True),
+                   ("orb", "orb.png", False),
+                   ("wall", "wallpape.jpg", False)]
+        self.imgs = [mkimgd(*tup) for tup in imgtups]
+
+        def mkspotd(dimension, place, img, x, y, visible, interactive):
+            return {"dimension": dimension,
+                    "place": place,
+                    "img": img,
+                    "x": x,
+                    "y": y,
+                    "visible": visible,
+                    "interactive": interactive}
+
+        self.spots = [
+            mkspotd('Physical', 'myroom', "orb", 400, 100, True, True),
+            mkspotd('Physical', 'mybathroom', 'orb', 450, 150, True, True),
+            mkspotd('Physical', 'guestroom', 'orb', 400, 200, True, True),
+            mkspotd('Physical', 'livingroom', 'orb', 300, 150, True, True),
+            mkspotd('Physical', 'diningoffice', 'orb', 350, 200, True, True),
+            mkspotd('Physical', 'kitchen', 'orb', 350, 150, True, True),
+            mkspotd('Physical', 'longhall', 'orb', 250, 150, True, True),
+            mkspotd('Physical', 'momsroom', 'orb', 250, 100, True, True),
+            mkspotd('Physical', 'momsbathroom', 'orb', 250, 200, True, True),
+            mkspotd('Physical', 'outside', 'orb', 300, 100, True, True)]
+
+        def mkpawnd(dimension, thing, img, visible, interactive):
+            return {"dimension": dimension,
+                    "thing": thing,
+                    "img": img,
+                    "visible": visible,
+                    "interactive": interactive}
+
+        pawntups = [('Physical', 'me', "troll_m", True, True),
+                    ('Physical', 'mom', 'zruty', True, True)]
+        self.pawns = [mkpawnd(*tup) for tup in pawntups]
+
+        self.table_contents = {
+            Dimension: self.dimensions,
+            Portal: self.portals,
+            Location: self.locations,
+            Containment: self.containments,
+            JourneyStep: self.steps,
+            Journey: self.journeys,
+            Place: self.places,
+            Menu: self.menus,
+            MenuItem: self.menuitems,
+            Color: self.colors,
+            Style: self.styles,
+            Item: self.places + self.portals + self.things,
+            Board: self.boards,
+            BoardMenu: self.boardmenu,
+            Img: self.imgs,
+            Spot: self.spots,
+            Pawn: self.pawns,
+            Thing: self.things}
+
+
+### These classes are just here to give a nice place to look up column
+### names. Don't use them
+
+
+class Item:
+    tabname = "item"
+    keydecldict = {"dimension": "text",
+                   "name": "text"}
+    valdecldict = {}
+    fkeydict = {}
+
+
+class Location:
+    tabname = "location"
+    keydecldict = {"dimension": "text",
+                   "thing": "text"}
+    valdecldict = {"place": "text"}
+    fkeydict = {"dimension, thing": ("thing", "dimension, name"),
+                "dimension, place": ("place", "dimension, name")}
+
+
+class Containment:
+    tabname = "containment"
+    keydecldict = {"dimension": "text",
+                   "contained": "text"}
+    valdecldict = {"container": "text"}
+    fkeydict = {"dimension, contained": ("thing", "dimension, name"),
+                "dimension, container": ("thing", "dimension, name")}
+    checks = ["contained<>container"]
+
+
+class Img:
+    tabname = "img"
+    keydecldict = {"name": "text"}
+    valdecldict = {"path": "text",
+                   "rltile": "boolean"}
+
+
+class BoardMenu:
+    tabname = "boardmenu"
+    keydecldict = {"board": "text",
+                   "menu": "text"}
+    valdecldict = {}
+    fkeydict = {"board": ("board", "dimension"),
+                "menu": ("menu", "name")}
+
+
+class JourneyStep:
+    tabname = "journeystep"
+    keydecldict = {"dimension": "text",
+                   "thing": "text",
+                   "idx": "integer"}
+    valdecldict = {"portal": "text"}
+    fkeydict = {"dimension, thing": ("thing", "dimension, name"),
+                "dimension, portal": ("portal", "dimension, name")}
+
+table_classes = [Dimension,
+                 Img,
+                 Item,
+                 Thing,
+                 Containment,
+                 Place,
+                 Location,
+                 Portal,
+                 Journey,
+                 JourneyStep,
+                 Color,
+                 Style,
+                 MenuItem,
+                 Menu,
+                 Spot,
+                 Pawn,
+                 Board,
+                 BoardMenu]
+
+
+def gentable(clas):
+    tabname = clas.tabname
+    keydict = clas.keydecldict
+    valdict = clas.valdecldict
+    if hasattr(clas, 'fkeydict'):
+        fkeydict = clas.fkeydict
+    else:
+        fkeydict = {}
+    if hasattr(clas, 'checks'):
+        checks = clas.checks
+    else:
+        checks = []
+    keynames = sorted(keydict.iterkeys())
+    valnames = sorted(valdict.iterkeys())
+    colnames = keynames + valnames
+    primarykey = ", ".join(keydict.keys())
+    coldict = {}
+    coldict.update(keydict)
+    coldict.update(valdict)
+    coldecl = [colname + " " + coldict[colname] for colname in colnames]
+    fkeydecl = [
+        "FOREIGN KEY(%s) REFERENCES %s(%s)" % (item[0], item[1][0], item[1][1])
+        for item in fkeydict.iteritems()]
+    checkdecl = [
+        "CHECK(%s)" % chk for chk in checks]
+    pkeydecl = ["PRIMARY KEY(%s)" % primarykey]
+    tabdecl = coldecl + fkeydecl + checkdecl + pkeydecl
+    return (keynames, valnames, colnames,
+            "CREATE TABLE " + tabname + " (" + ", ".join(tabdecl) + ");")
+
+
+for clas in table_classes:
+    (clas.keynames, clas.valnames, clas.colnames, clas.schema) = gentable(clas)
+
+
+table_schemata = [cls.schema for cls in table_classes]
+
+
+default = DefaultParameters()
+
 
 sys.path.append(os.curdir)
 
@@ -26,9 +573,46 @@ def untuple(list_o_tups):
     return r
 
 
+def genselect_wherein(colnames, keynames, keynames_in):
+    return ("SELECT " + ", ".join(["?"] * len(colnames)) +
+            "FROM ? WHERE (" +
+            ", ".join(["?"] * len(keynames)) + ") IN (" +
+            ", ".join(questionmarks(keynames_in)) + ")")
+
+
+def dictify_row(row, colnames):
+    return dict(zip(colnames, row))
+
+
+def dictify_rows(rows, keynames, colnames):
+    # Produce a dictionary with which to look up rows--but rows that
+    # have themselves been turned into dictionaries.
+    r = {}
+    # Start this dictionary with empty dicts, deep enough to hold
+    # all the partial keys in keynames and then a value.
+    # I think this fills deeper than necessary?
+    keys = len(keynames)  # use this many fields as keys
+    for row in rows:
+        ptr = r
+        i = 0
+        while i < keys:
+            i += 1
+            try:
+                ptr = ptr[row[i]]
+            except:
+                ptr = {}
+        # Now ptr points to the dict of the last key that doesn't get
+        # a dictified row. i is one beyond that.
+        ptr[row[i]] = dictify_row(row)
+    return r
+
+
 def questionmarks(list_o_tups):
-    q = "(" + ", ".join(["?"] * len(list_o_tups[0])) + ")"
-    return [q] * len(list_o_tups)
+    tupsize = len(list_o_tups[0])
+    q = ", ".join(["?"] * tupsize)
+    if tupsize > 1:
+        q = "(" + q + ")"
+    return [q] * tupsize
 
 
 def dicl2tupl(dicl):
@@ -44,24 +628,6 @@ def dicl2tupl(dicl):
 
 
 class Database:
-    colnames = {"dimension": Dimension.colnames,
-                "menu": Menu.colnames,
-                "menuitem": MenuItem.colnames,
-                "color": Color.colnames,
-                "style": Style.colnames,
-                "item": ('dimension', 'name'),
-                "place": Place.colnames,
-                "portal": Portal.colnames,
-                "thing": Thing.colnames,
-                "location": ('dimension', 'thing', 'place'),
-                "containment": ('dimension', 'contained', 'container'),
-                "journey_step": Journey.colnames,
-                "img": ('name', 'path', 'rltile'),
-                "boardmenu": ('board', 'menu'),
-                "pawn": Pawn.colnames,
-                "spot": Spot.colnames,
-                "board": Board.colnames}
-
     def __init__(self, dbfile):
         self.conn = sqlite3.connect(dbfile)
         self.c = self.conn.cursor()
@@ -74,6 +640,7 @@ class Database:
         self.boarddict = {}
         self.menudict = {}
         self.menuitemdict = {}
+        self.boardmenudict = {}
         self.pawndict = {}
         self.styledict = {}
         self.colordict = {}
@@ -88,25 +655,24 @@ class Database:
                     'float': float,
                     'bool': bool}
         self.func = {'toggle_menu_visibility': self.toggle_menu_visibility}
-        self.imgs2load = set()
 
     def __del__(self):
         self.c.close()
         self.conn.commit()
         self.conn.close()
 
-    def insert_dicl(self, tabname, dicl):
-        # Takes a table name and a list of dictionaries, which are
+    def insert_dicl(self, tabclas, dicl):
+        # Takes a table class and a list of dictionaries, which are
         # assumed to have keys that are the column names of the given
         # table. Inserts the values given in the dictionarylist into
         # the table.
-        coln = Database.colnames[tabname]
+        coln = tabclas.colnames
         valtups = []
         for dic in dicl:
             row = [dic[colnam] for colnam in coln]
             valtups.append(tuple(row))
         qrystr = "INSERT INTO %s VALUES (%s);" % (
-            tabname, ", ".join(["?"] * len(coln)))
+            tabclas.tabname, ", ".join(["?"] * len(coln)))
         self.c.executemany(qrystr, valtups)
 
     def insert_defaults(self):
@@ -116,7 +682,7 @@ class Database:
             self.xfunc(func)
 
     def mkschema(self):
-        for tab in default.tables:
+        for tab in table_schemata:
             self.c.execute(tab)
         self.conn.commit()
 
@@ -136,282 +702,228 @@ class Database:
     def xfunc(self, func):
         self.func[func.__name__] = func
 
+    def call_func(self, fname, farg):
+        return self.func[fname](farg)
+
     def load_board(self, dimension):
-        self.imgs2load = set()
-        qrystr = "SELECT width, height, wallpaper "\
-                 "FROM board WHERE dimension=?;"
+        # I'll be fetching all the *rows* I need, then turning them
+        # into Python objects, starting with the ones that don't have
+        # foreign keys.
+        def genselect(clas):
+            return ("SELECT " + ", ".join(clas.colnames) +
+                    " FROM " + clas.tabname + " WHERE dimension=?")
+        # fetch all the place rows
+        qrystr = genselect(Place)
         qrytup = (dimension,)
         self.c.execute(qrystr, qrytup)
-        (w, h, texname) = self.c.fetchone()
-        self.imgs2load.add(texname)
-        self.load_places_in_dimension(dimension)
-        places = self.placedict[dimension].values()
-        self.load_things_in_dimension(dimension)
-        things = self.thingdict[dimension].values()
-        self.load_portals_in_dimension(dimension)
-        self.load_containment_in_dimension(dimension)
-        self.load_journeys_in_dimension(dimension)
-        self.load_spots_for_board(dimension)
-        self.load_pawns_for_board(dimension)
-        self.load_menus_for_board(dimension)
-        journeys = self.journeydict[dimension].values()
-        for thing in things:
-            if dimension in self.containerdict:
-                if thing.name in self.containerdict[dimension]:
-                    thing.container = self.containerdict[dimension][thing.name]
-                else:
-                    thing.container = None
-                if thing.name in self.contentsdict[dimension]:
-                    thing.contents = self.contentsdict[dimension][thing.name]
-                else:
-                    thing.contents = []
-            if dimension in self.placedict and \
-               thing.location in self.placedict[dimension]:
-                thing.location = self.placedict[dimension][thing.location]
-            else:
-                thing.location = None
-            if thing.name in self.journeydict[dimension]:
-                thing.journey = self.journeydict[dimension][thing.name]
-        podd = self.portalorigdestdict
-        pcd = self.placecontentsdict
-        for place in places:
-            if place.name in podd[dimension]:
-                place.portals = podd[dimension][place.name].values()
-            else:
-                place.portals = []
-            if place.name in pcd[dimension]:
-                place.contents = pcd[dimension][place.name]
-            else:
-                place.contents = []
-        for journey in journeys:
-            journey.thing = self.thingdict[dimension][journey.thing]
-            journey.dest = self.placedict[dimension][journey.dest]
-        spots = self.spotdict[dimension].values()
-        places = self.placedict[dimension].values()
-        portals = self.portaldict[dimension].values()
-        things = self.thingdict[dimension].values()
-        pawns = self.pawndict[dimension].values()
-        menus = self.menudict[dimension].values()
-        self.load_imgs()
-        texture = self.imgdict[texname]
-        board = Board(dimension, w, h, texture, spots, pawns, menus)
-        for spot in spots:
-            spot.img = self.imgdict[spot.img]
-            spot.r = spot.img.width / 2
-            spot.place = self.placedict[dimension][spot.place]
-            spot.board = board
-        for pawn in pawns:
-            pawn.img = self.imgdict[pawn.img]
-            pawn.r = pawn.img.width / 2
-            pawn.thing = self.thingdict[dimension][pawn.thing]
-            pawn.board = board
-        for place in places:
-            place.spot = self.spotdict[dimension][place.name]
-        for portal in portals:
-            portal.orig = self.placedict[dimension][portal.orig]
-            portal.dest = self.placedict[dimension][portal.dest]
-        for thing in things:
-            if thing in self.pawndict[dimension]:
-                thing.pawn = self.pawndict[dimension][thing.name]
-            else:
-                # Not all things show up like pawns on the board.
-                # Some of them only show up in your inventory, or the
-                # contents listing of a place.
-                thing.pawn = None
-        for menu in self.menudict[dimension].values():
-            menu.board = board
-            for menuitem in menu.items:
-                if menuitem is None:
-                    del menuitem
-                else:
-                    menuitem.board = board
-        self.boarddict[dimension] = board
-        return board
+        place_rows = self.c.fetchall()
+        place_rowdicts = [
+            dictify_row(row, Place.colnames)
+            for row in place_rows]
+        # fetch all the thing rows
+        qrystr = genselect(Thing)
+        self.c.execute(qrystr, qrytup)
+        thing_rows = self.c.fetchall()
+        thing_rowdicts = [
+            dictify_row(row, Thing.colnames)
+            for row in thing_rows]
+        # fetch all the portal rows
+        qrystr = genselect(Portal)
+        self.c.execute(qrystr, qrytup)
+        portal_rows = self.c.fetchall()
+        portal_rowdicts = [
+            dictify_row(row, Portal.colnames)
+            for row in portal_rows]
+        # fetch all containment rows
+        qrystr = genselect(Containment)
+        self.c.execute(qrystr, qrytup)
+        containment_rows = self.c.fetchall()
+        containment_rowdicts = [
+            dictify_row(row, Containment.colnames)
+            for row in containment_rows]
+        # fetch all location rows
+        qrystr = genselect(Location)
+        self.c.execute(qrystr, qrytup)
+        location_rows = self.c.fetchall()
+        location_rowdicts = [
+            dictify_row(row, Location.colnames)
+            for row in location_rows]
+        # fetch all journey step rows
+        qrystr = genselect(JourneyStep)
+        self.c.execute(qrystr, qrytup)
+        journey_step_rows = self.c.fetchall()
+        journey_step_rowdicts = [
+            dictify_row(row, JourneyStep.colnames)
+            for row in journey_step_rows]
+        # fetch all journey rows
+        qrystr = genselect(Journey)
+        self.c.execute(qrystr, qrytup)
+        journey_rows = self.c.fetchall()
+        journey_rowdicts = [
+            dictify_row(row, Journey.colnames)
+            for row in journey_rows]
+        # fetch all spot rows
+        qrystr = genselect(Spot)
+        self.c.execute(qrystr, qrytup)
+        spot_rows = self.c.fetchall()
+        spot_rowdicts = [dictify_row(row, Spot.colnames) for row in spot_rows]
+        # fetch all pawn rows
+        qrystr = genselect(Pawn)
+        self.c.execute(qrystr, qrytup)
+        pawn_rows = self.c.fetchall()
+        pawn_rowdicts = [dictify_row(row, Pawn.colnames) for row in pawn_rows]
+        # Dimension is no longer an adequate key; stop using genselect
 
-    def load_menus_for_board(self, board):
-        qrystr = "SELECT DISTINCT menu FROM boardmenu WHERE board=?;"
-        self.c.execute(qrystr, (board,))
-        menunames = [row[0] for row in self.c]
-        qm = ["?"] * len(menunames)
-        qrystr = "SELECT name, left, bottom, top, right, style, visible "\
-                 "FROM menu WHERE name IN (" + ", ".join(qm) + ");"
-        self.c.execute(qrystr, menunames)
-        menurows = self.c.fetchall()
-        stylenames = set([row[5] for row in menurows])
-        qm = ["?"] * len(stylenames)
-        qrystr = "SELECT name, fontface, fontsize, spacing, "\
-                 "bg_inactive, bg_active, fg_inactive, fg_active "\
-                 "FROM style WHERE name IN (" + ", ".join(qm) + ");"
-        qrylst = list(stylenames)
-        self.c.execute(qrystr, qrylst)
-        stylerows = self.c.fetchall()
-        colornames = set()
-        for row in stylerows:
-            colornames.update(row[4:])
-        qrylst = list(colornames)
-        qm = ["?"] * len(qrylst)
-        qrystr = "SELECT name, red, green, blue, alpha FROM color "\
-                 "WHERE name IN (" + ", ".join(qm) + ");"
-        self.c.execute(qrystr, qrylst)
-        for row in self.c:
-            color = Color(*row)
-            self.colordict[row[0]] = color
-        for row in stylerows:
-            (name, fontface, fontsize, spacing,
-             bg_i, bg_a, fg_i, fg_a) = row
-            style = Style(name, fontface, fontsize, spacing,
-                          self.colordict[bg_i],
-                          self.colordict[bg_a],
-                          self.colordict[fg_i],
-                          self.colordict[fg_a])
-            self.styledict[name] = style
-        menunames = set()
-        if board not in self.menudict:
-            self.menudict[board] = {}
-        for row in menurows:
-            (name, x, y, w, h, sty, vis) = row
-            menunames.add(name)
-            style = self.styledict[sty]
-            menu = Menu(board, name, x, y, w, h, style, vis)
-            self.menudict[board][name] = menu
-        self.load_items_in_menus(board, menunames)
-
-    def load_items_in_menus(self, board, names):
-        qrylst = list(names)
-        qm = ["?"] * len(qrylst)
-        qrystr = ("SELECT menu, idx, text, onclick, onclick_arg, closer, "
-                  "visible, interactive FROM menuitem WHERE menu IN ("
-                  + ", ".join(qm) + ");")
-        self.c.execute(qrystr, qrylst)
-        md = self.menudict[board]
-        if board not in self.menuitemdict:
-            self.menuitemdict[board] = {}
-        mid = self.menuitemdict[board]
-        for row in self.c:
-            (menun, idx, text, fname, farg,
-             closer, visible, interactive) = row
-            onclick = self.func[fname]
-            menu = md[menun]
-            mi = MenuItem(board, menu, idx, text, onclick, farg,
-                          closer, visible, interactive)
-            if not mi.visible:
-                continue
-            while len(menu.items) <= idx:
-                menu.items.append(None)
-            menu.items[idx] = mi
-            if menun not in mid:
-                mid[menun] = {}
-            mid[menun][idx] = mi
-
-    def load_places_in_dimension(self, dimension):
-        qrystr = "SELECT name FROM place WHERE dimension=?;"
+        # find out what menus this board has
+        qrystr = "SELECT menu FROM boardmenu WHERE board=?"
+        self.c.execute(qrystr, qrytup)
+        menutups = self.c.fetchall()
+        menunames = [tup[0] for tup in menutups]
+        # load them
+        qrystr = ("SELECT " + ", ".join(Menu.colnames) +
+                  " FROM menu WHERE name IN (" +
+                  ", ".join(["?"] * len(menunames)) + ")")
+        qrytup = tuple(menunames)
+        self.c.execute(qrystr, qrytup)
+        menu_rows = self.c.fetchall()
+        menu_rowdicts = [dictify_row(row, Menu.colnames) for row in menu_rows]
+        # load the menus' items
+        qrystr = ("SELECT " + ", ".join(MenuItem.colnames) +
+                  " FROM menuitem WHERE menu IN (" +
+                  ", ".join(["?"] * len(menunames)) + ")")
+        self.c.execute(qrystr, qrytup)
+        menu_item_rows = self.c.fetchall()
+        menu_item_rowdicts = [dictify_row(row, MenuItem.colnames)
+                              for row in menu_item_rows]
+        stylenames = [rowdict["style"] for rowdict in menu_rowdicts]
+        # load the styles in the menus
+        qrystr = ("SELECT " + ", ".join(Style.colnames) +
+                  " FROM style WHERE name IN (" +
+                  ", ".join(["?"] * len(stylenames)) + ")")
+        qrytup = tuple(stylenames)
+        self.c.execute(qrystr, qrytup)
+        style_rows = self.c.fetchall()
+        # load the colors in the styles
+        style_rowdicts = [dictify_row(row, Style.colnames)
+                          for row in style_rows]
+        colornames = []
+        for rowdict in style_rowdicts:
+            colornames.extend([rowdict["bg_inactive"], rowdict["bg_active"],
+                               rowdict["fg_inactive"], rowdict["fg_active"]])
+        # load the colors
+        qrystr = ("SELECT " + ", ".join(Color.colnames) +
+                  " FROM color WHERE name IN (" +
+                  ", ".join(["?"] * len(colornames)) + ")")
+        qrytup = tuple(colornames)
+        self.c.execute(qrystr, qrytup)
+        color_rows = self.c.fetchall()
+        color_rowdicts = [
+            dictify_row(row, Color.colnames)
+            for row in color_rows]
+        # load the imgs
+        imgs2load = set()
+        qrystr = genselect(Board)
         self.c.execute(qrystr, (dimension,))
+        board_rowdict = dictify_row(self.c.fetchone(), Board.colnames)
+        imgs2load.add(board_rowdict["wallpaper"])
+        for row in spot_rowdicts:
+            imgs2load.add(row["img"])
+        for row in pawn_rowdicts:
+            imgs2load.add(row["img"])
+        imgnames = list(imgs2load)
+        qrystr = ("SELECT " + ", ".join(Img.colnames) +
+                  " FROM img WHERE name IN (" +
+                  ", ".join(["?"] * len(imgnames)) + ")")
+        qrytup = tuple(imgnames)
+        self.c.execute(qrystr, qrytup)
+        img_rows = self.c.fetchall()
+        img_rowdicts = [dictify_row(row, Img.colnames) for row in img_rows]
+        for row in img_rowdicts:
+            if row["rltile"]:
+                self.load_rltile(row["name"], row["path"])
+            else:
+                self.load_regular_img(row["name"], row["path"])
+        # OK, all the data is loaded. Now construct Python objects of it all.
+
+        for row in color_rowdicts:
+            color = Color(self, row)
+            self.colordict[row["name"]] = color
+        for row in style_rowdicts:
+            style = Style(self, row)
+            self.styledict[row["name"]] = style
+        if dimension not in self.boardmenudict:
+            self.boardmenudict[dimension] = {}
+        for row in menu_rowdicts:
+            menu = Menu(self, row)
+            self.menudict[row["name"]] = menu
+            self.boardmenudict[dimension][row["name"]] = menu
+        for row in menu_item_rowdicts:
+            menuitem = MenuItem(self, dimension, row)
+            menu = self.menudict[row["menu"]]
+            while row["idx"] >= len(menu.items):
+                menu.items.append(None)
+            menu.items[row["idx"]] = menuitem
         if dimension not in self.placedict:
             self.placedict[dimension] = {}
-        pd = self.placedict[dimension]
-        for row in self.c:
-            name = row[0]
-            place = Place(dimension, name)
-            pd[name] = place
-
-    def load_things_in_dimension(self, dimension):
-        qrystr = "SELECT thing, place FROM location WHERE dimension=?;"
-        self.c.execute(qrystr, (dimension,))
-        td = self.thingdict
-        pcd = self.placecontentsdict
-        for d in [td, pcd]:
-            if dimension not in d:
-                d[dimension] = {}
-        for row in self.c:
-            (name, location) = row
-            thing = Thing(dimension, name, location)
-            td[dimension][name] = thing
-            if location not in pcd[dimension]:
-                pcd[dimension][location] = []
-            pcd[dimension][location].append(thing.name)
-
-    def load_portals_in_dimension(self, dimension):
-        qrystr = "SELECT name, from_place, to_place FROM portal "\
-                 "WHERE dimension=?;"
-        self.c.execute(qrystr, (dimension,))
-        for row in self.c:
-            (name, orign, destn) = row
-            pd = self.portaldict
-            podd = self.portalorigdestdict
-            pdod = self.portaldestorigdict
-            dictlist = [pd, podd, pdod]
-            for d in dictlist:
-                if dimension not in d:
-                    d[dimension] = {}
-            if orign not in podd[dimension]:
-                podd[dimension][orign] = {}
-            if destn not in pdod[dimension]:
-                pdod[dimension][destn] = {}
-            portal = Portal(dimension, name, orign, destn)
-            podd[dimension][orign][destn] = portal
-            pdod[dimension][destn][orign] = portal
-            pd[dimension][name] = portal
-
-    def load_containment_in_dimension(self, dimension):
-        qrystr = "SELECT contained, container "\
-                 "FROM containment WHERE dimension=?;"
-        self.c.execute(qrystr, (dimension,))
-        container = self.containerdict
-        contents = self.contentsdict
-        if dimension not in container:
-            container[dimension] = {}
-        if dimension not in contents:
-            contents[dimension] = {}
-        for row in self.c:
-            (inside, outside) = row
-            container[dimension][inside] = outside
-            if outside not in contents[dimension]:
-                contents[dimension][outside] = []
-            contents[dimension][outside].append(inside)
-
-    def load_spots_for_board(self, dimension):
-        qrystr = "SELECT place, img, x, y, visible, interactive "\
-                 "FROM spot WHERE dimension=?;"
-        self.c.execute(qrystr, (dimension,))
+        for row in place_rowdicts:
+            pl = Place(self, row)
+            self.placedict[dimension][row["name"]] = pl
+        if dimension not in self.thingdict:
+            self.thingdict[dimension] = {}
+        for row in thing_rowdicts:
+            th = Thing(self, row)
+            self.thingdict[dimension][row["name"]] = th
+        # Places and things depend on one another. Only now I've
+        # loaded them both may I link them to one another.
+        for row in location_rowdicts:
+            thing = self.thingdict[dimension][row["thing"]]
+            place = self.placedict[dimension][row["place"]]
+            thing.location = place
+            place.contents.append(thing)
+        if dimension not in self.containerdict:
+            self.containerdict[dimension] = {}
+        if dimension not in self.contentsdict:
+            self.contentsdict[dimension] = {}
+        for row in containment_rowdicts:
+            inner = self.thingdict[dimension][row["contained"]]
+            outer = self.thingdict[dimension][row["container"]]
+            outer.contents.append(inner)
+        if dimension not in self.portaldict:
+            self.portaldict[dimension] = {}
+        for row in portal_rowdicts:
+            portal = Portal(self, row)
+            self.portaldict[dimension][row["name"]] = portal
+            self.placedict[dimension][row["from_place"]].portals.append(portal)
+        if dimension not in self.journeydict:
+            self.journeydict[dimension] = {}
+        for row in journey_rowdicts:
+            journey = Journey(self, row)
+            self.journeydict[dimension][row["thing"]] = journey
+        for row in journey_step_rowdicts:
+            journey = self.journeydict[dimension][row["thing"]]
+            portal = self.portaldict[dimension][row["portal"]]
+            journey.set_step(portal, row["idx"])
         if dimension not in self.spotdict:
             self.spotdict[dimension] = {}
-        sd = self.spotdict[dimension]
-        for row in self.c:
-            (place, img, x, y, vis, inter) = row
-            self.imgs2load.add(img)
-            spot = Spot(dimension, place, img, x, y, vis, inter)
-            sd[place] = spot
-
-    def load_pawns_for_board(self, dimension):
-        qrystr = "SELECT dimension, thing, img, visible, interactive "\
-                 "FROM pawn WHERE dimension=?;"
-        self.c.execute(qrystr, (dimension,))
+        for row in spot_rowdicts:
+            spot = Spot(self, row)
+            self.spotdict[dimension][row["place"]] = spot
+            self.placedict[dimension][row["place"]].spot = spot
         if dimension not in self.pawndict:
             self.pawndict[dimension] = {}
-        pd = self.pawndict[dimension]
-        for row in self.c:
-            (dimension, thing, img, vis, inter) = row
-            self.imgs2load.add(img)
-            pawn = Pawn(dimension, thing, img, vis, inter)
-            pd[thing] = pawn
-
-    def load_imgs(self):
-        qrylst = list(self.imgs2load)
-        qm = ["?"] * len(qrylst)
-        qrystr = "SELECT name, path, rltile FROM img WHERE name IN (" +\
-                 ", ".join(qm) + ");"
-        self.c.execute(qrystr, qrylst)
-        regular = set()
-        rltile = set()
-        for row in self.c:
-            if row[2]:
-                rltile.add(row)
-            else:
-                regular.add(row)
-        for img in regular:
-            self.load_regular_img(img[0], img[1])
-        for img in rltile:
-            self.load_rltile(img[0], img[1])
+        for row in pawn_rowdicts:
+            pawn = Pawn(self, row)
+            self.pawndict[dimension][row["thing"]] = pawn
+            self.thingdict[dimension][row["thing"]].pawn = pawn
+        board = Board(self, board_rowdict)
+        for pawn in board.pawns:
+            pawn.board = board
+        for spot in board.spots:
+            spot.board = board
+        for menu in board.menus:
+            menu.board = board
+        self.boarddict[dimension] = board
+        return board
 
     def load_rltile(self, name, path):
         badimg = image(path)
@@ -431,61 +943,14 @@ class Database:
         self.imgdict[name] = tex
         return tex
 
-    def load_journeys_in_dimension(self, dimension):
-        # At most one journey per thing. I'd like to have a way of
-        # keeping precomputed journeys--walks--on file as well,
-        # but this is not that... a walk wouldn't have thing or
-        # progress associated.
-        qrystr = "SELECT thing, idx, destination, portal, progress "\
-                 "FROM journey_step WHERE dimension=?;"
-        self.c.execute(qrystr, (dimension,))
-        if dimension not in self.journeydict:
-            self.journeydict[dimension] = {}
-        for row in self.c:
-            (thing, idx, destination, port, progress) = row
-            portal = self.portaldict[dimension][port]
-            if thing in self.journeydict[dimension]:
-                journey = self.journeydict[dimension][thing]
-                while len(journey.steplist) <= idx:
-                    journey.steplist.append(None)
-                journey.steplist[idx] = portal
-            else:
-                journey = Journey(thing, destination, [portal])
-                self.journeydict[dimension][thing] = journey
-
     def toggle_menu_visibility(self, stringly):
         """Given a string arg of the form boardname.menuname, toggle the
 visibility of the given menu on the given board.
 
 """
         (boardname, menuname) = stringly.split('.')
-        menu = self.menudict[boardname][menuname]
+        menu = self.boardmenudict[boardname][menuname]
         menu.toggle_visibility()
-
-    def insert_things(self, things):
-        thingrows = [tuple(it) for it in things]
-        self.insert_rows("thing", thingrows)
-
-    def insert_places(self, places):
-        placerows = [tuple(it) for it in places]
-        self.insert_rows("place", placerows)
-
-    def insert_portals(self, ports):
-        portrows = [tuple(it) for it in ports]
-        self.insert_rows("portal", portrows)
-
-    def insert_pawns(self, pawns):
-        pawnrows = [tuple(it) for it in pawns]
-        self.insert_rows("pawn", pawnrows)
-
-    def insert_spots(self, spots):
-        spotrows = [tuple(it) for it in spots]
-        self.insert_rows("spot", spotrows)
-
-    def insert_rows(self, tabname, rows):
-        qrystr = insstr(tabname, rows)
-        qrylst = untuple(rows)
-        self.c.execute(qrystr, qrylst)
 
     def keys_known(self, tabname, keynames, keys):
         # Return a sublist of keys containing those keys that are
@@ -521,19 +986,8 @@ visibility of the given menu on the given board.
         keys_missing = self.keys_unknown(tabname, keynames, keys)
         return [key2row[key] for key in keys_missing]
 
-    def rows_different(self, tabname, keynames, valnames, rows):
-        keylen = len(keynames)
-        keys = [row[:keylen] for row in rows]
-        keys_qm = questionmarks(keys)
-        rows_qm = questionmarks(rows)
-        keyvalstr = ", ".join(keynames + valnames)
-        keystr = ", ".join(keynames)
-        qrystr = ("SELECT " + keyvalstr + " FROM " + tabname +
-                  " WHERE (" + keystr + ") IN (" + keys_qm +
-                  ") AND (" + keyvalstr + ") NOT IN (" + rows_qm + ");")
-        qrylst = untuple(keys) + untuple(rows)
-        self.c.execute(qrystr, qrylst)
-        return self.c.fetchall()
+    def rows_different(self, tabname, rows):
+        pass
 
     def things_in_place(self, place):
         dim = place.dimension
@@ -543,6 +997,11 @@ visibility of the given menu on the given board.
             return []
         thingnames = self.placecontentsdict[dim][pname]
         return [self.thingdict[dim][name] for name in thingnames]
+
+    def pawns_on_spot(self, spot):
+        return [thing.pawn for thing in
+                spot.place.contents
+                if thing.name in self.pawndict[spot.dimension]]
 
     def inverse_portal(self, portal):
         orign = portal.orig.name

@@ -1,7 +1,6 @@
 # This file is for the controllers for the things that show up on the
 # screen when you play.
 import pyglet
-from util import gentable
 from uuid import uuid1 as uuid
 
 
@@ -13,7 +12,8 @@ class Color:
     get a particular element by name rather than number.
 
     """
-    keydecldict = {'name': 'text primary key'}
+    tabname = "color"
+    keydecldict = {'name': 'text'}
     valdecldict = {'red': 'integer not null '
                    'check(red between 0 and 255)',
                    'green': 'integer not null '
@@ -22,26 +22,25 @@ class Color:
                    'check(blue between 0 and 255)',
                    'alpha': 'integer default 255 '
                    'check(alpha between 0 and 255)'}
-    (keynames, valnames, colnames, schema) = gentable(
-        "color", keydecldict, valdecldict)
 
-    def __init__(self, name, r=0, g=0, b=0, a=255):
-        self.name = name
-        self.red = r
-        self.green = g
-        self.blue = b
-        self.alpha = a
-        self.tup = (r, g, b, a)
+    def __init__(self, db, rowdict):
+        self.name = rowdict["name"]
+        self.red = rowdict["red"]
+        self.green = rowdict["green"]
+        self.blue = rowdict["blue"]
+        self.alpha = rowdict["alpha"]
+        self.tup = (self.red, self.green, self.blue, self.alpha)
         self.pattern = pyglet.image.SolidColorImagePattern(self.tup)
 
     def __iter__(self):
-        return self.tup
+        return iter(self.tup)
 
     def __str__(self):
         return "(" + ", ".join(self.tup) + ")"
 
 
 class MenuItem:
+    tabname = "menuitem"
     keydecldict = {'menu': 'text',
                    'idx': 'integer'}
     valdecldict = {'text': 'text',
@@ -50,24 +49,17 @@ class MenuItem:
                    'closer': 'boolean',
                    'visible': 'boolean',
                    'interactive': 'boolean'}
-    suffix = ("foreign key(menu) references menu(name), "
-              "primary key(menu, idx)")
-    (keynames, valnames, colnames, schema) = gentable(
-        "menuitem", keydecldict, valdecldict, suffix)
+    fkeydict = {"menu": ("menu", "name")}
 
-    def __init__(self, board, menu, idx, text, onclick, onclick_arg,
-                 closer=True, visible=False, interactive=True):
-        self.board = board
-        self.menu = menu
-        self.idx = idx
-        self.text = text
-        self.onclick_core = onclick
-        self.onclick_arg = onclick_arg
-        self.closer = closer
-        self.visible = visible
-        self.interactive = interactive
-        self.height = menu.style.fontsize + menu.style.spacing
-        self.hovered = False
+    def __init__(self, db, board, rowdict):
+        self.menu = db.boardmenudict[board][rowdict["menu"]]
+        self.idx = rowdict["idx"]
+        self.text = rowdict["text"]
+        self.onclick_core = db.func[rowdict["onclick"]]
+        self.onclick_arg = rowdict["onclick_arg"]
+        self.closer = rowdict["closer"]
+        self.visible = rowdict["visible"]
+        self.interactive = rowdict["interactive"]
 
     def __iter__(self):
         return (self.menu.name, self.idx,
@@ -129,7 +121,7 @@ class MenuItem:
     def gettop(self):
         if not hasattr(self, 'top'):
             self.top = (self.menu.gettop() - self.menu.style.spacing -
-                        (self.idx * self.height))
+                        (self.idx * self.getheight()))
         return self.top
 
     def getbot(self):
@@ -144,7 +136,7 @@ class MenuItem:
 
     def getheight(self):
         if not hasattr(self, 'height'):
-            self.height = self.getright() - self.getleft()
+            self.height = self.menu.style.fontsize + self.menu.style.spacing
         return self.height
 
     def onclick(self, button, modifiers):
@@ -157,29 +149,27 @@ class MenuItem:
 
 
 class Menu:
-    keydecldict = {'name': 'text primary key'}
+    tabname = "menu"
+    keydecldict = {'name': 'text'}
     valdecldict = {'left': 'float not null',
                    'bottom': 'float not null',
                    'top': 'float not null',
                    'right': 'float not null',
                    'style': "text default 'Default'",
                    "visible": "boolean default 0"}
-    (keynames, valnames, colnames, schema) = gentable(
-        "menu", keydecldict, valdecldict)
     interactive = True
 
-    def __init__(self, board, name,
-                 left, bottom, top, right, style, visible):
-        self.board = board
-        self.name = name
-        self.left = left
-        self.bottom = bottom
-        self.top = top
-        self.right = right
-        self.style = style
+    def __init__(self, db, rowdict):
+        self.name = rowdict["name"]
+        self.left = rowdict["left"]
+        self.bottom = rowdict["bottom"]
+        self.top = rowdict["top"]
+        self.right = rowdict["right"]
+        self.style = db.styledict[rowdict["style"]]
+        self.visible = rowdict["visible"]
         self.items = []
         self._scrolled_to = 0
-        self.visible = visible
+
         # In order to actually draw these things you need to give them
         # an attribute called window, and it should be a window of the
         # pyglet kind. It isn't in the constructor because that would
@@ -190,7 +180,10 @@ class Menu:
                 self.right, self.style.name, self.visible)
 
     def __getitem__(self, i):
-        return self.items.__getitem__(i)
+        return self.items[i]
+
+    def __setitem__(self, i, to):
+        self.items[i] = to
 
     def __delitem__(self, i):
         return self.items.__delitem__(i)
@@ -233,6 +226,7 @@ class Spot:
     place; at the given x and y coordinates on the screen; in the
     given graph of Spots. The Spot will be magically connected to the other
     Spots in the same way that the underlying Places are connected."""
+    tabname = "spot"
     keydecldict = {"dimension": "text",
                    "place": "text"}
     valdecldict = {"img": "text",
@@ -240,27 +234,20 @@ class Spot:
                    "y": "integer",
                    "visible": "boolean",
                    "interactive": "boolean"}
-    suffix = ("foreign key(dimension, place) "
-              "references place(dimension, name), "
-              "foreign key(img) references img(name), "
-              "primary key(dimension, place)")
-    (keynames, valnames, colnames, schema) = gentable(
-        "spot", keydecldict, valdecldict, suffix)
+    fkeydict = {"dimension, place": ("place", "dimension, name"),
+                "img": ("img", "name")}
 
-    def __init__(self, dimension, place, img, x, y, visible, interactive):
-        self.dimension = dimension
-        self.place = place
-        self.x = x
-        self.y = y
-        self.img = img
-        self.visible = visible
-        self.interactive = interactive
+    def __init__(self, db, rowdict):
+        self.dimension = rowdict["dimension"]
+        self.place = db.placedict[self.dimension][rowdict["place"]]
+        self.x = rowdict["x"]
+        self.y = rowdict["y"]
+        self.img = db.imgdict[rowdict["img"]]
+        self.visible = rowdict["visible"]
+        self.interactive = rowdict["interactive"]
+        self.r = self.img.width / 2
         self.grabpoint = None
         self.uuid = uuid()
-
-    def __iter__(self):
-        return (self.dimension, self.place.name, self.img.name, self.x,
-                self.y, self.visible, self.interactive)
 
     def __repr__(self):
         return "spot(%i,%i)->%s" % (self.x, self.y, str(self.place))
@@ -321,25 +308,22 @@ class Pawn:
     nebulous dimension between Places.
 
     """
+    tabname = "pawn"
     keydecldict = {"dimension": "text",
                    "thing": "text"}
     valdecldict = {"img": "text",
                    "visible": "boolean",
                    "interactive": "boolean"}
-    suffix = ("foreign key(img) references img(name), "
-              "foreign key(dimension, thing) "
-              "references thing(dimension, name), "
-              "primary key(dimension, thing)")
-    (keynames, valnames, colnames, schema) = gentable(
-        "pawn", keydecldict, valdecldict, suffix)
+    fkeydict = {"img": ("img", "name"),
+                "dimension, thing": ("thing", "dimension, name")}
 
-    def __init__(self, dimension, thing, img, visible, interactive):
-        self.dimension = dimension
-        self.thing = thing
-        self.img = img
-        self.visible = visible
-        self.interactive = interactive
-        self.hovered = False
+    def __init__(self, db, rowdict):
+        self.dimension = rowdict["dimension"]
+        self.thing = db.thingdict[self.dimension][rowdict["thing"]]
+        self.img = db.imgdict[rowdict["img"]]
+        self.visible = rowdict["visible"]
+        self.interactive = rowdict["interactive"]
+        self.r = self.img.width / 2
 
     def __iter__(self):
         return [
@@ -409,30 +393,22 @@ class Pawn:
 
 
 class Board:
-    keydecldict = {"dimension": "text primary key"}
+    tabname = "board"
+    keydecldict = {"dimension": "text"}
     valdecldict = {"width": "integer",
                    "height": "integer",
                    "wallpaper": "text"}
-    suffix = ("foreign key(dimension) references dimension(name), "
-              "foreign key(wallpaper) references image(name)")
-    (keynames, valnames, colnames, schema) = gentable(
-        "board", keydecldict, valdecldict, suffix)
+    fkeydict = {"dimension": ("dimension", "name"),
+                "wallpaper": ("image", "name")}
 
-    def __init__(self, dimension, width, height, image,
-                 spots=[], pawns=[], menus=[]):
-        self.dimension = dimension
-        self.width = width
-        self.height = height
-        self.img = image
-        self.spots = spots
-        self.pawns = pawns
-        self.menus = menus
-
-    def __iter__(self):
-        return [("dimension", self.dimension),
-                ("width", self.width),
-                ("height", self.height),
-                ("wallpaper", self.wallpaper)]
+    def __init__(self, db, rowdict):
+        self.dimension = rowdict["dimension"]
+        self.width = rowdict["width"]
+        self.height = rowdict["height"]
+        self.img = db.imgdict[rowdict["wallpaper"]]
+        self.spots = db.spotdict[self.dimension].viewvalues()
+        self.pawns = db.pawndict[self.dimension].viewvalues()
+        self.menus = db.boardmenudict[self.dimension].viewvalues()
 
     def getwidth(self):
         return self.width
@@ -448,7 +424,8 @@ class Board:
 
 
 class Style:
-    keydecldict = {"name": "text primary key"}
+    tabname = "style"
+    keydecldict = {"name": "text"}
     valdecldict = {"fontface": "text not null",
                    "fontsize": "integer not null",
                    "spacing": "integer default 6",
@@ -456,29 +433,20 @@ class Style:
                    "bg_active": "text not null",
                    "fg_inactive": "text not null",
                    "fg_active": "text not null"}
-    suffix = ("foreign key(bg_inactive) references color(name), "
-              "foreign key(bg_active) references color(name), "
-              "foreign key(fg_inactive) references color(name), "
-              "foreign key(fg_active) references color(name)")
-    (keynames, valnames, colnames, schema) = gentable(
-        "style", keydecldict, valdecldict, suffix)
+    fkeydict = {"bg_inactive": ("color", "name"),
+                "bg_active": ("color", "name"),
+                "fg_inactive": ("color", "name"),
+                "fg_active": ("color", "name")}
 
-    def __init__(self, name, fontface, fontsize, spacing,
-                 bg_inactive, bg_active, fg_inactive, fg_active):
-        self.name = name
-        self.fontface = fontface
-        self.fontsize = fontsize
-        self.spacing = spacing
-        self.bg_inactive = bg_inactive
-        self.bg_active = bg_active
-        self.fg_inactive = fg_inactive
-        self.fg_active = fg_active
-
-    def __iter__(self):
-        return (self.name, self.fontface, self.fontsize, self.spacing,
-                self.bg_inactive.name, self.bg_active.name,
-                self.fg_inactive.name, self.fg_active.name)
-
-
-tables = [Color, MenuItem, Menu, Spot, Pawn, Board, Style]
-table_schemata = [table.schema for table in tables]
+    def __init__(self, db, rowdict):
+        self.name = rowdict["name"]
+        self.fontface = rowdict["fontface"]
+        self.fontsize = rowdict["fontsize"]
+        self.spacing = rowdict["spacing"]
+        self.bg_inactive = db.colordict[rowdict["bg_inactive"]]
+        self.bg_active = db.colordict[rowdict["bg_active"]]
+        self.fg_inactive = db.colordict[rowdict["fg_inactive"]]
+        self.fg_active = db.colordict[rowdict["fg_active"]]
+        self.tup = (self.name, self.fontface, self.fontsize, self.spacing,
+                    self.bg_inactive.name, self.bg_active.name,
+                    self.fg_inactive.name, self.fg_active.name)

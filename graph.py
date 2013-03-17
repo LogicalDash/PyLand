@@ -1,5 +1,4 @@
 import igraph
-from util import gentable
 from uuid import uuid1 as uuid
 
 
@@ -29,30 +28,20 @@ class Journey:
     a Portal at a time, but Journey handles that case anyhow.
 
     """
+    tabname = "journey"
     keydecldict = {"dimension": "text",
                    "thing": "text"}
-    valdecldict = {"idx": "integer",
-                   "destination": "text",
-                   "portal": "text",
+    valdecldict = {"curstep": "integer",
                    "progress": "float"}
-    suffix = ("foreign key(dimension, thing) "
-              "references thing(dimension, name), "
-              "foreign key(dimension, portal) "
-              "references portal(dimension, name), "
-              "foreign key(dimension, destination) "
-              "references place(dimension, name), "
-              "check(progress>=0.0), "
-              "check(progress<1.0), "
-              "primary key(dimension, thing, idx)")
-    (keynames, valnames, colnames, schema) = gentable(
-        "journey_step", keydecldict, valdecldict, suffix)
+    fkeydict = {"dimension, thing": ("thing", "dimension, name")}
+    checks = ["progress>=0.0", "progress<1.0"]
 
-    def __init__(self, thing, dest, steplist):
-        self.steplist = steplist
-        self.curstep = 0
-        self.thing = thing
-        self.dest = dest
-        self.progress = 0.0
+    def __init__(self, db, rowdict):
+        self.dimension = rowdict["dimension"]
+        self.thing = db.thingdict[rowdict["dimension"]][rowdict["thing"]]
+        self.curstep = rowdict["curstep"]
+        self.progress = rowdict["progress"]
+        self.steplist = []
 
     def steps(self):
         """Get the number of steps in the Journey.
@@ -89,10 +78,7 @@ class Journey:
         If i is out of range, returns None.
 
         """
-        if i >= 0 and i < len(self.steplist):
-            return self.steplist[i+self.curstep]
-        else:
-            return None
+        return self.steplist[i+self.curstep]
 
     def move(self, prop):
         """Move the specified amount through the current portal.
@@ -114,7 +100,15 @@ class Journey:
         while self.progress < 0.0:
             self.curstep -= 1
             self.progress += 1.0
-        return self.getstep(0)
+        if self.curstep > len(self.steplist):
+            return None
+        else:
+            return self.getstep(0)
+
+    def set_step(self, port, idx):
+        while idx >= len(self.steplist):
+            self.steplist.append(None)
+        self.steplist[idx] = port
 
 
 class Portal:
@@ -135,39 +129,24 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
+    tabname = "portal"
     keydecldict = {"dimension": "text",
                    "name": "text"}
     valdecldict = {"from_place": "text",
                    "to_place": "text"}
-    suffix = ("foreign key(dimension, name) "
-              "references item(dimension, name), "
-              "foreign key(dimension, from_place) "
-              "references place(dimenison, name), "
-              "foreign key(dimension, to_place) "
-              "references place(dimension, name), "
-              "primary key(dimension, name), "
-              "check(from_place<>to_place)")
-    (keynames, valnames, colnames, schema) = gentable(
-        "portal", keydecldict, valdecldict, suffix)
+    fkeydict = {"dimension, name": ("item", "dimension, name"),
+                "dimension, from_place": ("place", "dimension, name"),
+                "dimension, to_place": ("place", "dimension, name")}
 
-    def __init__(self, dimension, name, origin, destination):
-        self.dimension = dimension
-        self.name = name
-        self.dest = destination
-        self.orig = origin
+    def __init__(self, db, rowdict):
+        self.dimension = rowdict["dimension"]
+        self.name = rowdict["name"]
+        self.dest = db.placedict[self.dimension][rowdict["to_place"]]
+        self.orig = db.placedict[self.dimension][rowdict["from_place"]]
         self.uuid = uuid()
-
-    def __iter__(self):
-        return (self.dimension, self.name, self.orig.name, self.dest.name)
 
     def __repr__(self):
         return self.name
-
-    def __str__(self):
-        return "(" + ", ".join(self) + ")"
-
-    def __eq__(self, other):
-        return self.name == other.name
 
     def __hash__(self):
         return int(self.uuid)
@@ -204,17 +183,16 @@ class Portal:
 
 
 class Place:
+    tabname = "place"
     keydecldict = {"dimension": "text",
                    "name": "text"}
     valdecldict = {}
-    (keynames, valnames, colnames, schema) = gentable(
-        "place", keydecldict, valdecldict)
 
-    def __init__(self, dimension, name, contents=[], portals=[]):
-        self.name = name
-        self.dimension = dimension
-        self.contents = contents
-        self.portals = portals
+    def __init__(self, db, rowdict):
+        self.name = rowdict["name"]
+        self.dimension = rowdict["dimension"]
+        self.contents = []
+        self.portals = []
 
     def __iter__(self):
         return [
@@ -236,24 +214,20 @@ class Place:
     def __getitem__(self, key):
         return self.att[key]
 
-    def __repr__(self):
-        return self.name
-
     def __eq__(self, other):
         # The name is the key in the database. Must be unique.
         return self.name == other.name
 
 
 class Dimension:
-    keydecldict = {"name": "text primary key"}
+    tabname = "dimension"
+    keydecldict = {"name": "text"}
     valdecldict = {}
-    (keynames, valnames, colnames, schema) = gentable(
-        "dimension", keydecldict, valdecldict)
 
-    def __init__(self, name, places=[], portals=[]):
-        self.name = name
-        self.places = places
-        self.portals = portals
+    def __init__(self, rowdict):
+        self.name = rowdict["name"]
+        self.places = []
+        self.portals = []
 
     def __str__(self):
         return "(" + self.name + ")"
@@ -295,6 +269,3 @@ class Dimension:
 
     def get_igraph_layout(self, layout_type):
         return self.get_igraph_graph().layout(layout=layout_type)
-
-tables = [Journey, Portal, Place, Dimension]
-table_schemata = [tab.schema for tab in tables]
