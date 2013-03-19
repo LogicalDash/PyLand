@@ -16,6 +16,10 @@ class Thing:
         self.forbiddions = []
         self.permit_inspections = []
         self.forbid_inspections = []
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def __str__(self):
         return "(%s, %s)" % (self.dimension, self.name)

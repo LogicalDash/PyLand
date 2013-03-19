@@ -1,9 +1,7 @@
 import pyglet
 from database import Database
 from state import GameState
-from copy import copy
-from widgets import Menu, MenuItem, Spot, Pawn, Board
-from time import sleep
+from widgets import Menu, MenuItem, Spot, Pawn
 
 
 def point_is_in(x, y, listener):
@@ -80,6 +78,8 @@ class GameWindow:
         self.batch = batch
         for menu in self.board.menus:
             menu.window = self.window
+            if menu.main_for_window:
+                self.mainmenu = menu
 
         self.drawn = {"edges": {}}
 
@@ -117,7 +117,10 @@ class GameWindow:
         if hasattr(self, 'boardsprite'):
             old.add(self.boardsprite)
         for trash in iter(old):
-            trash.delete()
+            try:
+                trash.delete()
+            except AttributeError:
+                pass
         for vex in self.drawn["edges"].itervalues():
             vex.delete()
 

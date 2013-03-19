@@ -1,9 +1,3 @@
-# Problems:
-#
-# The various database functions can't all be the same for every
-# object class. It doesn't make sense to have an update method for
-# Place, for instance, since the table only records that a place
-# exists by a certain name.
 import sqlite3
 import sys
 import os
@@ -11,11 +5,6 @@ from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
 from graph import Dimension, Journey, Place, Portal
 from pyglet.resource import image
-
-
-### Default values for every damn table in the database, placed here
-### because the import stopped working when I got all recursive 'n
-### shit
 
 
 def start_new_map(nope):
@@ -552,6 +541,19 @@ def gentable(clas):
 
 for clas in table_classes:
     (clas.keynames, clas.valnames, clas.colnames, clas.schema) = gentable(clas)
+    clas.key_qm = ", ".join(["?"] * len(clas.keynames))
+    clas.key_qmp = "(" + clas.key_qm + ")"
+    clas.val_qm = ", ".join(["?"] * len(clas.valnames))
+    clas.row_qm = ", ".join(["?"] * len(clas.colnames))
+    clas.row_qmp = "(" + clas.row_qm + ")"
+
+    def keys_qm(self, n):
+        return ", ".join([self.key_qmp] * n)
+    clas.keys_qm = keys_qm
+
+    def rows_qm(self, n):
+        return ", ".join([self.row_qmp] * n)
+    clas.rows_qm = rows_qm
 
 
 table_schemata = [cls.schema for cls in table_classes]
@@ -631,7 +633,8 @@ class Database:
     def __init__(self, dbfile):
         self.conn = sqlite3.connect(dbfile)
         self.c = self.conn.cursor()
-        self.altered = []
+        self.altered = set()
+        self.deleted = set()
         self.placedict = {}
         self.portaldict = {}
         self.thingdict = {}
@@ -650,10 +653,22 @@ class Database:
         self.placecontentsdict = {}
         self.portalorigdestdict = {}
         self.portaldestorigdict = {}
-        self.typ = {'str': str,
-                    'int': int,
-                    'float': float,
-                    'bool': bool}
+        self.dictdict = {Place: self.placedict,
+                         Portal: self.portaldict,
+                         Thing: self.thingdict,
+                         Spot: self.spotdict,
+                         Img: self.imgdict,
+                         Board: self.boarddict,
+                         Menu: self.menudict,
+                         MenuItem: self.menuitemdict,
+                         BoardMenu: self.boardmenudict,
+                         Pawn: self.pawndict,
+                         Style: self.styledict,
+                         Color: self.colordict,
+                         Journey: self.journeydict}
+        self.tabdict = {}
+        for clas in self.dictdict.iterkeys():
+            self.tabdict[clas] = clas.tabname
         self.func = {'toggle_menu_visibility': self.toggle_menu_visibility}
 
     def __del__(self):
@@ -694,10 +709,6 @@ class Database:
             return True
         except sqlite3.OperationalError:
             return False
-
-    def sync(self):
-        pass
-        # TODO: write all altered objects to disk
 
     def xfunc(self, func):
         self.func[func.__name__] = func
@@ -952,42 +963,139 @@ visibility of the given menu on the given board.
         menu = self.boardmenudict[boardname][menuname]
         menu.toggle_visibility()
 
-    def keys_known(self, tabname, keynames, keys):
-        # Return a sublist of keys containing those keys that are
-        # already in the table by the given name, tabname.
-        keynamesstr = ", ".join(keynames)
-        qrystr = ("SELECT " + keynamesstr + " FROM " + tabname +
-                  " WHERE (" + keynamesstr + ") IN ("
-                  + questionmarks(keys) + ");")
-        qrylst = untuple(keys)
-        self.c.execute(qrystr, qrylst)
-        return self.c.fetchall()
+    def remember(self, obj):
+        self.altered.add(obj)
 
-    def keys_unknown(self, tabname, keynames, keys):
-        keys_known = self.keys_known(tabname, keynames, keys)
-        keys_known_set = set(keys_known)
-        test_keys_set = set(keys)
-        keys_unknown_set = test_keys_set.difference(keys_known_set)
-        return iter(keys_unknown_set)
+    def forget(self, obj):
+        self.deleted.add(obj)
 
-    def keys_known_not_loaded(self, tabname, keynames, keys_loaded):
-        # This will most likely be used for finding keys to delete.
-        keynamesstr = ", ".join(keynames)
-        qrystr = ("SELECT " + keynamesstr + " FROM " + tabname +
-                  " WHERE (" + keynamesstr + ") NOT IN (" +
-                  questionmarks(keys_loaded) + ");")
-        qrylst = untuple(keys_loaded)
-        self.c.execute(qrystr, qrylst)
+    def update(self):
+        """Write all altered objects to disk. Delete all deleted objects from
+disk.
 
-    def rows_missing(self, tabname, keynames, rows):
-        keylen = len(keynames)
-        key2row = dict([(row[:keylen], row) for row in rows])
-        keys = key2row.keys()
-        keys_missing = self.keys_unknown(tabname, keynames, keys)
-        return [key2row[key] for key in keys_missing]
-
-    def rows_different(self, tabname, rows):
-        pass
+        """
+        # To sort the objects into known, unknown, and changed, I'll
+        # need to query all their tables with their respective
+        # keys. To do that I need to group these objects according to
+        # what table they go in.
+        tabdict = {}
+        for obj in self.altered:
+            if obj.tabname not in tabdict:
+                tabdict[obj.tabname] = {}
+            tabdict[obj.tabname][obj.key] = obj
+        # get known objects for each table
+        knowndict = {}
+        for tabset in tabdict.iteritems():
+            (tabname, objdict) = tabset
+            objs = objdict.values()
+            clas = objs[0].__class__
+            keynames = clas.keynames
+            qmstr = clas.keys_qm(len(objs))
+            keystr = ", ".join(keynames)
+            qrystr = "SELECT %s FROM %s WHERE (%s) IN (%s)" % (
+                keystr, tabname, keystr, qmstr)
+            keys = []
+            for obj in objs:
+                keys.extend([getattr(obj, keyname) for keyname in keynames])
+            qrytup = tuple(keys)
+            self.c.execute(qrystr, qrytup)
+            knowndict[tabname] = self.c.fetchall()
+        knownobjs = {}
+        for item in knowndict.iteritems():
+            (tabname, rowset) = item
+            rows = list(rowset)
+            objlst = [tabdict[tabname][row] for row in rows]
+            knownobjs[tabname] = set(objlst)
+        # Get changed objects for each table. For this I need only
+        # consider objects that are known.
+        changeddict = {}
+        for known in knownobjs.iteritems():
+            (table, objs) = known
+            clas = objs[0].__class__
+            colnames = clas.colnames
+            qmstr = clas.rows_qm(len(objs))
+            colstr = ", ".join(colnames)
+            qrystr = "SELECT %s FROM %s WHERE (%s) NOT IN (%s)" % (
+                colstr, tabname, colstr, qmstr)
+            cols = []
+            for obj in objs:
+                cols.extend([getattr(obj, colname) for colname in colnames])
+            qrytup = tuple(cols)
+            self.c.execute(qrystr, qrytup)
+            changeddict[tabname] = self.c.fetchall()
+        changedobjs = {}
+        for item in changeddict.iteritems():
+            (tabname, rows) = item
+            # The objects represented here are going to be the same
+            # kind as are always represented by this table, so grab
+            # the keynames from knownobjs--they're the same
+            keynames = knownobjs[tabname][0].keynames
+            keylen = len(keynames)
+            keys = [row[:keylen] for row in rows]
+            objlst = [tabdict[tabname][key] for key in keys]
+            changedobjs[tabname] = set(objlst)
+        # I can find the unknown objects without touching the
+        # database, using set differences
+        tabsetdict = {}
+        for item in tabdict.iteritems():
+            if item[0] not in tabsetdict:
+                tabsetdict[item[0]] = item[1].viewvalues()
+        unknownobjs = {}
+        for item in tabsetdict.iteritems():
+            (table, objset) = item
+            unknownobjs[table] = objset - unknownobjs[table]
+        # Since I am only updating the database with new and changed
+        # objects, not doing a full sync, I can start now.
+        # Commence deleting old versions of changed objects.
+        deletions_by_table = {}
+        insertions_by_table = {}
+        changel = [
+            (item[0], list(item[1])) for item in changedobjs.iteritems()]
+        # changel is pairs where the first item is the table name and
+        # the last item is a list of objects changed in that table
+        for pair in changel:
+            (table, objs) = pair
+            # invariant: all the objs are of the same class
+            # list of tuples representing keys to delete
+            dellst = [obj.key for obj in objs]
+            deletions_by_table[table] = dellst
+            # list of tuples representing rows to insert
+            inslst = [obj.key + obj.val for obj in objs]
+            insertions_by_table[table] = inslst
+        newl = [
+            (item[0], list(item[1])) for item in unknownobjs.iteritems]
+        for pair in newl:
+            (table, objs) = pair
+            inslst = [obj.key + obj.val for obj in objs]
+            if table in insertions_by_table:
+                insertions_by_table[table].extend(inslst)
+            else:
+                insertions_by_table[table] = inslst
+        # delete things to be changed
+        for item in deletions_by_table.iteritems():
+            (table, keys) = item
+            keynamestr = ", ".join(keys[0].keynames)
+            qmstr = keys[0].keys_qm(len(keys))
+            keylst = []
+            for key in keys:
+                keylst.extend(key)
+            qrystr = "DELETE FROM %s WHERE (%s) IN (%s)" % (
+                table, keynamestr, qmstr)
+            qrytup = tuple(keylst)
+            self.c.execute(qrystr, qrytup)
+        # insert things whether they're changed or new
+        for item in insertions_by_table.iteritems():
+            (table, rows) = item
+            qmstr = rows[0].rows_qm(len(rows))
+            vallst = []
+            for row in rows:
+                vallst.extend(row)
+            qrystr = "INSERT INTO %s VALUES (%s)" % (
+                table, qmstr)
+            qrytup = tuple(vallst)
+            self.c.execute(qrystr, qrytup)
+        # that'll do.
+        self.altered = []
 
     def things_in_place(self, place):
         dim = place.dimension

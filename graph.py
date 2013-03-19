@@ -42,6 +42,10 @@ class Journey:
         self.curstep = rowdict["curstep"]
         self.progress = rowdict["progress"]
         self.steplist = []
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def steps(self):
         """Get the number of steps in the Journey.
@@ -144,6 +148,10 @@ class Portal:
         self.dest = db.placedict[self.dimension][rowdict["to_place"]]
         self.orig = db.placedict[self.dimension][rowdict["from_place"]]
         self.uuid = uuid()
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def __repr__(self):
         return self.name
@@ -193,6 +201,10 @@ class Place:
         self.dimension = rowdict["dimension"]
         self.contents = []
         self.portals = []
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def __iter__(self):
         return [
@@ -228,6 +240,10 @@ class Dimension:
         self.name = rowdict["name"]
         self.places = []
         self.portals = []
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def __str__(self):
         return "(" + self.name + ")"

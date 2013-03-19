@@ -14,14 +14,14 @@ class Color:
     """
     tabname = "color"
     keydecldict = {'name': 'text'}
-    valdecldict = {'red': 'integer not null '
-                   'check(red between 0 and 255)',
-                   'green': 'integer not null '
-                   'check(green between 0 and 255)',
-                   'blue': 'integer not null '
-                   'check(blue between 0 and 255)',
-                   'alpha': 'integer default 255 '
-                   'check(alpha between 0 and 255)'}
+    valdecldict = {'red': 'integer not null ',
+                   'green': 'integer not null ',
+                   'blue': 'integer not null ',
+                   'alpha': 'integer default 255 '}
+    checks = ["red between 0 and 255",
+              "green between 0 and 255",
+              "blue between 0 and 255",
+              "alpha between 0 and 255"]
 
     def __init__(self, db, rowdict):
         self.name = rowdict["name"]
@@ -31,6 +31,10 @@ class Color:
         self.alpha = rowdict["alpha"]
         self.tup = (self.red, self.green, self.blue, self.alpha)
         self.pattern = pyglet.image.SolidColorImagePattern(self.tup)
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def __iter__(self):
         return iter(self.tup)
@@ -156,6 +160,7 @@ class Menu:
                    'top': 'float not null',
                    'right': 'float not null',
                    'style': "text default 'Default'",
+                   "main_for_window": "boolean default 0",
                    "visible": "boolean default 0"}
     interactive = True
 
@@ -167,9 +172,13 @@ class Menu:
         self.right = rowdict["right"]
         self.style = db.styledict[rowdict["style"]]
         self.visible = rowdict["visible"]
+        self.main_for_window = rowdict["main_for_window"]
         self.items = []
         self._scrolled_to = 0
-
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
         # In order to actually draw these things you need to give them
         # an attribute called window, and it should be a window of the
         # pyglet kind. It isn't in the constructor because that would
@@ -219,6 +228,89 @@ class Menu:
         self.visible = not self.visible
 
 
+class CalendarBrick:
+    # Being a block of time in a calendar, with or without an event in
+    # it. This isn't stored in the database because really, why would
+    # I store *empty calendar cells* in the database?
+    def __init__(self, start, end, color, text=""):
+        self.start = start
+        self.end = end
+        self.color = color
+        self.text = text
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+
+class CalendarSchedule:
+    # mapping the CalendarWalls to the Schedules represented
+    tablename = "calendarschedule"
+    keydecldict = {"calendar": "text",
+                   "schedule": "text"}
+    valdecldict = {"color": "text"}
+    fkeydict = {"calendar": ("calendar", "name"),
+                "schedule": ("schedule", "name"),
+                "color": ("color", "name")}
+
+
+class CalendarWall:
+    # A board may have up to one of these. It may be toggled. It
+    # may display any schedule or combination thereof, distinguishing
+    # them by color or not at all. It has only one column.
+    tablename = "calendar"
+    keydecldict = {"name": "text"}
+    valdecldict = {"visible": "boolean",
+                   "interactive": "boolean",
+                   "rows_on_screen": "integer",
+                   "scrolled_to": "integer",
+                   "gutter": "integer"}
+    checks = ["rows_on_screen>0", "scrolled_to>=0"]
+
+    def __init__(self, db, rowdict):
+        # TODO pull in schedules.
+
+        # I also need the window, but I'm not adding that yet because
+        # it's not instantiated at load time.
+        self.visible = rowdict["visible"]
+        self.interactive = rowdict["interactive"]
+        self.screenful = rowdict["rows_on_screen"]
+        self.scrolled = rowdict["scrolled_to"]
+        self.gutter = rowdict["gutter"]
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+    def no_window(self):
+        raise Exception("I can't do this without a GameWindow. "
+                        "Set %s.gw to a GameWindow object." % (self.__name__,))
+
+    def getleft(self):
+        if not hasattr(self, 'gw'):
+            self.no_window()
+        return self.gw.mainmenu.getright() + self.gutter
+
+    def getright(self):
+        if not hasattr(self, 'gw'):
+            self.no_window()
+        return self.gw.window.width - self.gutter
+
+    def gettop(self):
+        if not hasattr(self, 'gw'):
+            self.no_window()
+        return self.gw.window.height - self.gutter
+
+    def getbot(self):
+        if not hasattr(self, 'gw'):
+            self.no_window()
+        return self.gutter
+
+    def getwidth(self):
+        return self.getright() - self.getleft()
+
+    def getheight(self):
+        return self.gettop() - self.getbot()
+
+
 class Spot:
     """Controller for the icon that represents a Place.
 
@@ -248,7 +340,10 @@ class Spot:
         self.r = self.img.width / 2
         self.grabpoint = None
         self.uuid = uuid()
-
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
     def __repr__(self):
         return "spot(%i,%i)->%s" % (self.x, self.y, str(self.place))
 
@@ -324,15 +419,10 @@ class Pawn:
         self.visible = rowdict["visible"]
         self.interactive = rowdict["interactive"]
         self.r = self.img.width / 2
-
-    def __iter__(self):
-        return [
-            ("dimension", self.dimension),
-            ("name", self.thing.name),
-            ("img", self.img.name),
-            ("visible", self.visible),
-            ("interactive", self.interactive)]
-
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
     def getcoords(self):
         # Assume I've been provided a spotdict. Use it to get the
         # spot's x and y, as well as that of the spot for the next
@@ -447,6 +537,7 @@ class Style:
         self.bg_active = db.colordict[rowdict["bg_active"]]
         self.fg_inactive = db.colordict[rowdict["fg_inactive"]]
         self.fg_active = db.colordict[rowdict["fg_active"]]
-        self.tup = (self.name, self.fontface, self.fontsize, self.spacing,
-                    self.bg_inactive.name, self.bg_active.name,
-                    self.fg_inactive.name, self.fg_active.name)
+        self.key = [
+            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.val = [
+            rowdict[valname] for valname in self.valdecldict.iterkeys()]
