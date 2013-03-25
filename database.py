@@ -67,10 +67,10 @@ thing_menu_items = {'Custom Thing': ('new_thing', 'custom'),
                     'Decoration': ('new_thing', 'decoration'),
                     'Clothing': ('new_thing', 'clothing'),
                     'Tool': ('new_thing', 'tool')}
-main_menu_items = {'Game': ('toggle_menu_visibility_by_name', 'Game'),
-                   'Editor': ('toggle_menu_visibility_by_name', 'Editor'),
-                   'Place': ('toggle_menu_visibility_by_name', 'Place'),
-                   'Thing': ('toggle_menu_visibility_by_name', 'Thing')}
+main_menu_items = {'Game': ('toggle_menu_visibility', 'Game'),
+                   'Editor': ('toggle_menu_visibility', 'Editor'),
+                   'Place': ('toggle_menu_visibility', 'Place'),
+                   'Thing': ('toggle_menu_visibility', 'Thing')}
 
 
 solarized_colors = {'base03': (0x00, 0x2b, 0x36),
@@ -139,35 +139,40 @@ class DefaultParameters:
                     'top': 1.0,
                     'right': 0.2,
                     'style': 'Small',
-                    'visible': False}
+                    'visible': False,
+                    'main_for_window': False}
         editormenu = {'name': 'Editor',
                       'left': 0.1,
                       'bottom': 0.3,
                       'top': 1.0,
                       'right': 0.2,
                       'style': 'Small',
-                      'visible': False}
+                      'visible': False,
+                      'main_for_window': False}
         placemenu = {'name': 'Place',
                      'left': 0.1,
                      'bottom': 0.3,
                      'top': 1.0,
                      'right': 0.2,
                      'style': 'Small',
-                     'visible': False}
+                     'visible': False,
+                     'main_for_window': False}
         thingmenu = {'name': 'Thing',
                      'left': 0.1,
                      'bottom': 0.3,
                      'top': 1.0,
                      'right': 0.2,
                      'style': 'Small',
-                     'visible': False}
+                     'visible': False,
+                     'main_for_window': False}
         mainmenu = {'name': 'Main',
                     'left': 0.0,
                     'bottom': 0.0,
                     'top': 1.0,
                     'right': 0.12,
                     'style': 'Big',
-                    'visible': True}
+                    'visible': True,
+                    'main_for_window': True}
         self.menus = [gamemenu, editormenu, placemenu, thingmenu, mainmenu]
         menunames = [menud["name"] for menud in self.menus]
 
@@ -628,20 +633,27 @@ def dicl2tupl(dicl):
         r.append(tuple(l))
     return r
 
+def deep_lookup(dic, keylst):
+    key = keylst.pop()
+    ptr = dic
+    while keylst != []:
+        ptr = ptr[key]
+        key = keylst.pop()
+    return ptr[key]
+
 
 class Database:
     def __init__(self, dbfile):
         self.conn = sqlite3.connect(dbfile)
         self.c = self.conn.cursor()
         self.altered = set()
-        self.deleted = set()
+        self.removed = set()
         self.placedict = {}
         self.portaldict = {}
         self.thingdict = {}
         self.spotdict = {}
         self.imgdict = {}
         self.boarddict = {}
-        self.menudict = {}
         self.menuitemdict = {}
         self.boardmenudict = {}
         self.pawndict = {}
@@ -659,14 +671,24 @@ class Database:
                          Spot: self.spotdict,
                          Img: self.imgdict,
                          Board: self.boarddict,
-                         Menu: self.menudict,
-                         MenuItem: self.menuitemdict,
-                         BoardMenu: self.boardmenudict,
                          Pawn: self.pawndict,
                          Style: self.styledict,
                          Color: self.colordict,
                          Journey: self.journeydict}
-        self.tabdict = {}
+        self.tabdict = {"place": self.placedict,
+                        "portal": self.portaldict,
+                        "thing": self.thingdict,
+                        "spot": self.spotdict,
+                        "img": self.imgdict,
+                        "board": self.boarddict,
+                        # fuck i can't do menus this way i need to
+                        # bring back the menudict but i won't be --
+                        # you know what? I'm not going to sync menus
+                        # at all. fuck 'em
+                        "pawn": self.pawndict,
+                        "style": self.styledict,
+                        "color": self.colordict,
+                        "journey": self.journeydict}
         for clas in self.dictdict.iterkeys():
             self.tabdict[clas] = clas.tabname
         self.func = {'toggle_menu_visibility': self.toggle_menu_visibility}
@@ -866,11 +888,10 @@ class Database:
             self.boardmenudict[dimension] = {}
         for row in menu_rowdicts:
             menu = Menu(self, row)
-            self.menudict[row["name"]] = menu
             self.boardmenudict[dimension][row["name"]] = menu
         for row in menu_item_rowdicts:
             menuitem = MenuItem(self, dimension, row)
-            menu = self.menudict[row["menu"]]
+            menu = self.boardmenudict[dimension][row["menu"]]
             while row["idx"] >= len(menu.items):
                 menu.items.append(None)
             menu.items[row["idx"]] = menuitem
@@ -959,35 +980,57 @@ class Database:
 visibility of the given menu on the given board.
 
 """
-        (boardname, menuname) = stringly.split('.')
-        menu = self.boardmenudict[boardname][menuname]
-        menu.toggle_visibility()
+        splot = stringly.split('.')
+        if len(splot) == 1:
+            # I only got the menu name.
+            # Maybe I've gotten an appropriate xfunc for that?
+            if "toggle_menu_visibility_by_name" in self.func:
+                return self.func["toggle_menu_visibility_by_name"](stringly)
+            # I might be able to find the right menu object anyhow: if
+            # there's only one by that name, toggle it.
+            menuname = splot[0]
+            menu = None
+            for boardmenu in self.boardmenudict.itervalues():
+                for boardmenuitem in boardmenu.iteritems():
+                    if boardmenuitem[0] == menuname:
+                        if menu is None:
+                            menu = boardmenuitem[1]
+                        else:
+                            raise Exception("Unable to disambiguate"
+                                            "the menu identifier: " + stringly)
+            menu.toggle_visibility()
+        else:
+            # Nice. Toggle that.
+            (boardname, menuname) = splot
+            self.boardmenudict[boardname][menuname].toggle_visibility()
 
     def remember(self, obj):
         self.altered.add(obj)
 
     def forget(self, obj):
-        self.deleted.add(obj)
+        self.removed.add(obj)
 
-    def update(self):
+    def sync(self):
         """Write all altered objects to disk. Delete all deleted objects from
 disk.
 
         """
+        # Handle additions and changes first.
+        #
         # To sort the objects into known, unknown, and changed, I'll
         # need to query all their tables with their respective
         # keys. To do that I need to group these objects according to
         # what table they go in.
+
         tabdict = {}
-        for obj in self.altered:
+        for obj in iter(self.altered):
             if obj.tabname not in tabdict:
-                tabdict[obj.tabname] = {}
-            tabdict[obj.tabname][obj.key] = obj
+                tabdict[obj.tabname] = []
+            tabdict[obj.tabname].append(obj)
         # get known objects for each table
         knowndict = {}
         for tabset in tabdict.iteritems():
-            (tabname, objdict) = tabset
-            objs = objdict.values()
+            (tabname, objs) = tabset
             clas = objs[0].__class__
             keynames = clas.keynames
             qmstr = clas.keys_qm(len(objs))
@@ -1002,9 +1045,7 @@ disk.
             knowndict[tabname] = self.c.fetchall()
         knownobjs = {}
         for item in knowndict.iteritems():
-            (tabname, rowset) = item
-            rows = list(rowset)
-            objlst = [tabdict[tabname][row] for row in rows]
+            (tabname, rows) = item
             knownobjs[tabname] = set(objlst)
         # Get changed objects for each table. For this I need only
         # consider objects that are known.
@@ -1044,9 +1085,6 @@ disk.
         for item in tabsetdict.iteritems():
             (table, objset) = item
             unknownobjs[table] = objset - unknownobjs[table]
-        # Since I am only updating the database with new and changed
-        # objects, not doing a full sync, I can start now.
-        # Commence deleting old versions of changed objects.
         deletions_by_table = {}
         insertions_by_table = {}
         changel = [
@@ -1071,7 +1109,16 @@ disk.
                 insertions_by_table[table].extend(inslst)
             else:
                 insertions_by_table[table] = inslst
-        # delete things to be changed
+        # Now handle things that have actually been deleted from the
+        # world.
+        #
+        # If and when I get my own special-snowflake journal
+        # system working, journal entries should not be included here.
+        #
+        # Invariant: No object is in both self.altered and self.removed.
+        for obj in self.removed:
+            deletions_by_table[obj.tabname].append(obj)
+        # delete things to be changed, and things to be actually deleted
         for item in deletions_by_table.iteritems():
             (table, keys) = item
             keynamestr = ", ".join(keys[0].keynames)
@@ -1095,7 +1142,8 @@ disk.
             qrytup = tuple(vallst)
             self.c.execute(qrystr, qrytup)
         # that'll do.
-        self.altered = []
+        self.altered = set()
+        self.removed = set()
 
     def things_in_place(self, place):
         dim = place.dimension
