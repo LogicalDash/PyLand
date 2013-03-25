@@ -8,8 +8,7 @@ class Color:
     """Color(red=0, green=0, blue=0, alpha=255) => color
 
     This is just a container class for the (red, green, blue, alpha)
-    tuples that Pyglet uses to identify colors. I like being able to
-    get a particular element by name rather than number.
+    tuples that Pyglet uses to identify colors. 
 
     """
     tabname = "color"
@@ -237,10 +236,6 @@ class CalendarBrick:
         self.end = end
         self.color = color
         self.text = text
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
 class CalendarSchedule:
     # mapping the CalendarWalls to the Schedules represented
@@ -252,34 +247,41 @@ class CalendarSchedule:
                 "schedule": ("schedule", "name"),
                 "color": ("color", "name")}
 
-
 class CalendarWall:
     # A board may have up to one of these. It may be toggled. It
     # may display any schedule or combination thereof, distinguishing
     # them by color or not at all. It has only one column.
     tablename = "calendar"
-    keydecldict = {"name": "text"}
+    keydecldict = {"dimension": "text"}
     valdecldict = {"visible": "boolean",
                    "interactive": "boolean",
                    "rows_on_screen": "integer",
                    "scrolled_to": "integer",
-                   "gutter": "integer"}
+                   "left": "float",
+                   "top": "float",
+                   "right": "float",
+                   "bottom": "float"}
     checks = ["rows_on_screen>0", "scrolled_to>=0"]
 
     def __init__(self, db, rowdict):
         # TODO pull in schedules.
-
+        #
         # I also need the window, but I'm not adding that yet because
         # it's not instantiated at load time.
         self.visible = rowdict["visible"]
         self.interactive = rowdict["interactive"]
         self.screenful = rowdict["rows_on_screen"]
         self.scrolled = rowdict["scrolled_to"]
-        self.gutter = rowdict["gutter"]
+        self.left = rowdict["left"]
+        self.right = rowdict["right"]
+        self.top = rowdict["top"]
+        self.bottom = rowdict["bottom"]
+        self.dimension = rowdict["dimension"]
         self.key = [
             rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
         self.val = [
             rowdict[valname] for valname in self.valdecldict.iterkeys()]
+
     def no_window(self):
         raise Exception("I can't do this without a GameWindow. "
                         "Set %s.gw to a GameWindow object." % (self.__name__,))

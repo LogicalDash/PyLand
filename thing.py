@@ -1,6 +1,3 @@
-from attrcheck import AttrCheck
-
-
 class Thing:
     tabname = "thing"
     keydecldict = {"dimension": "text",
