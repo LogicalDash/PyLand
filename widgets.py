@@ -8,8 +8,7 @@ class Color(Saveable):
     """Color(red=0, green=0, blue=0, alpha=255) => color
 
     This is just a container class for the (red, green, blue, alpha)
-    tuples that Pyglet uses to identify colors. I like being able to
-    get a particular element by name rather than number.
+tuples that Pyglet uses to identify colors. 
 
     """
     coldecls = {"color":
@@ -270,6 +269,9 @@ class CalendarBrick:
             self.end == other.end and
             self.text == other.text)
 
+    def __hash__(self):
+        return self.hsh
+
 
 class CalendarWall(Saveable):
     # A board may have up to one of these. It may be toggled. It
@@ -297,7 +299,7 @@ class CalendarWall(Saveable):
 
     def __init__(self, db, rowdict):
         # TODO pull in schedules.
-
+        #
         # I also need the window, but I'm not adding that yet because
         # it's not instantiated at load time.
         self.visible = rowdict["visible"]
@@ -306,10 +308,11 @@ class CalendarWall(Saveable):
         self.scrolled = rowdict["scrolled_to"]
         self.gutter = rowdict["gutter"]
         self.hsh = hash(self.dimension)
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+        self.left = rowdict["left"]
+        self.right = rowdict["right"]
+        self.top = rowdict["top"]
+        self.bottom = rowdict["bottom"]
+        self.dimension = rowdict["dimension"]
 
     def __eq__(self, other):
         # not checking for gw this time, because there can only be one
