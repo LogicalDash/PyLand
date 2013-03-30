@@ -1,13 +1,35 @@
-from attrcheck import AttrCheck
+from saveload import Saveable
 
 
-class Thing:
-    tabname = "thing"
-    keydecldict = {"dimension": "text",
-                   "name": "text"}
-    valdecldict = {}
+class Thing(Saveable):
+    coldecls = {"thing":
+                {"dimension": "text",
+                 "name": "text"},
+                "location":
+                {"dimension": "text",
+                 "thing": "text",
+                 "place": "text"},
+                "containment":
+                {"dimension": "text",
+                 "contained": "text",
+                 "container": "text"}}
+    primarykeys = {"thing": ("dimension", "name"),
+                   "location": ("dimension", "thing"),
+                   "containment": ("dimension", "contained")}
+    foreignkeys = {"thing":
+                   {"dimension": ("dimension", "name")},
+                   "location":
+                   {"dimension": ("dimension", "name"),
+                    "dimension, thing": ("thing", "dimension, name"),
+                    "dimension, place": ("place", "dimension, name")},
+                   "containment":
+                   {"dimension": ("dimension", "name"),
+                    "dimension, contained": ("thing", "dimension, name"),
+                    "dimension, container": ("thing", "dimension, name")}}
+    checks = {"containment": ["contained<>container"]}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.name = rowdict["name"]
         self.location = None
@@ -56,28 +78,18 @@ class Thing:
         self.permissions.remove(it)
         self.forbiddions.append(it)
 
-    def add_inspection(self, attrn, vals, lower, upper, permit):
-        spect = AttrCheck(attrn, vals, lower, upper)
-        if permit:
-            self.permit_inspections.append(spect)
-        else:
-            self.forbid_inspections.append(spect)
 
-    def attrcheck_permit(self, attrn, vals, lower, upper):
-        """When I receive an instruction to add an item, if the item is
-        in neither permissions nor forbiddions, I will see if its
-        attribute by the name of attrn passes the given test. The test
-        is in three parts. Firstly, if the value of attrn is in the
-        list vals, the item is permitted--don't bother with the rest
-        of the checks, just add it to contents. Second, check that the
-        attribute falls between the given lower and upper bounds, and
-        if so, add it to contents. Finally, proceed to the next
-        inspection."""
-        self.add_inspection(attrn, vals, lower, upper, True)
+class ThingKind:
+    """A category to which a Thing may belong. Any Thing may belong to any
+number of ThingKinds."""
+    tablename = "thing_kind"
+    keydecldict = {"name": "text"}
 
-    def attrcheck_forbid(self, attrn, vals, lower, upper):
-        self.add_inspection(attrn, vals, lower, upper, False)
 
+class ThingKindMember:
+    tablename = "thing_kind_member"
+    keydecldict = {"thing": "text",
+                   "kind": "text"}
 # TODO: methods of Thing to get instances of those classes and inspect
 # items who want to enter to make sure they pass.
 #

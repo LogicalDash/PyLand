@@ -28,7 +28,9 @@ class GameWindow:
         self.spotgroup = pyglet.graphics.OrderedGroup(2)
         self.pawngroup = pyglet.graphics.OrderedGroup(3)
         self.menugroup = pyglet.graphics.OrderedGroup(4)
-        self.labelgroup = pyglet.graphics.OrderedGroup(5)
+        self.calendargroup = pyglet.graphics.OrderedGroup(4)
+        self.brickgroup = pyglet.graphics.OrderedGroup(5)
+        self.labelgroup = pyglet.graphics.OrderedGroup(6)
 
         self.pressed = None
         self.hovered = None
@@ -94,6 +96,8 @@ class GameWindow:
         newmenuitems = []
         newpawns = []
         newspots = []
+        newcal = None
+        newbricks = []
         while len(self.menus_changed) > 0:
             menu = self.menus_changed.pop()
             if menu in self.drawn:
@@ -103,6 +107,15 @@ class GameWindow:
                 if item in self.drawn:
                     old.add(self.drawn[item])
                 newmenuitems.append(item)
+        if self.calendar_changed:
+            cal = self.calendar
+            if cal in self.drawn:
+                old.add(self.drawn[cal])
+            newcal = cal
+            for brick in cal.bricks:
+                if brick in self.drawn:
+                    old.add(self.drawn[brick])
+                    newbricks.append(brick)
         while len(self.pawns_changed) > 0:
             pawn = self.pawns_changed.pop()
             if pawn in self.drawn:
@@ -124,6 +137,10 @@ class GameWindow:
         for vex in self.drawn["edges"].itervalues():
             vex.delete()
 
+        if newcal is not None:
+            self.add_calendar_wall_to_batch(newcal)
+            for brick in newbricks:
+                self.add_calendar_brick_to_batch(brick)
         for menu in newmenus:
             self.add_menu_to_batch(menu)
         for item in newmenuitems:
@@ -249,6 +266,45 @@ class GameWindow:
                                   color=color.tup, x=left, y=bot,
                                   batch=self.batch, group=self.labelgroup)
             self.drawn[mi] = l
+
+    def add_calendar_wall_to_batch(self, wall):
+        if wall.visible:
+            color = wall.style.bg_inactive
+            w = wall.getwidth()
+            h = wall.getheight()
+            pattern = pyglet.image.SolidColorImagePattern(color.tup)
+            image = pattern.create_image(w, h)
+            s = pyglet.sprite.Sprite(image, wall.getleft(), wall.getbot(),
+                                     batch=self.batch,
+                                     group=self.calendargroup)
+            self.drawn[wall] = s
+
+    def add_calendar_brick_to_batch(self, brick):
+        if brick.visible and brick.wall.visible:
+            sty = brick.wall.style
+            if self.hovered is brick:
+                bgcolor = sty.bg_active
+                fgcolor = sty.fg_active
+            else:
+                bgcolor = sty.bg_inactive
+                fgcolor = sty.fg_inactive
+            pattern = pyglet.image.SolidColorImagePattern(bgcolor.tup)
+            w = brick.getwidth()
+            h = brick.getheight()
+            image = pattern.create_image(w, h)
+            brickleft = brick.getleft()
+            brickbot = brick.getbot()
+            bricktop = brick.gettop()
+            # Assuming one-line labels, and one label per brick.
+            # Not a sturdy assumption, fix later.
+            labelbot = bricktop - sty.fontsize - sty.spacing
+            labelleft = brickleft + sty.spacing
+            s = pyglet.sprite.Sprite(image, brickleft, brickbot,
+                                     batch=self.batch, group=self.brickgroup)
+            l = pyglet.text.Label(brick.text, sty.fontface, sty.fontsize,
+                                  color=fgcolor.tup, x=labelleft, y=labelbot,
+                                  batch=self.batch, group=self.labelgroup)
+            self.drawn[brick] = (s, l)
 
     def add_spot_to_batch(self, spot):
         if spot.visible:

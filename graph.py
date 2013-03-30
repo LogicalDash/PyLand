@@ -1,8 +1,8 @@
 import igraph
-from uuid import uuid1 as uuid
+from saveload import Saveable
 
 
-class Journey:
+class Journey(Saveable):
     """Series of steps taken by a Thing to get to a Place.
 
     Journey(traveller, destination, steps) => journey
@@ -28,15 +28,27 @@ class Journey:
     a Portal at a time, but Journey handles that case anyhow.
 
     """
-    tabname = "journey"
-    keydecldict = {"dimension": "text",
-                   "thing": "text"}
-    valdecldict = {"curstep": "integer",
-                   "progress": "float"}
-    fkeydict = {"dimension, thing": ("thing", "dimension, name")}
-    checks = ["progress>=0.0", "progress<1.0"]
+    coldecls = {"journey":
+                {"dimension": "text",
+                 "thing": "text",
+                 "curstep": "integer",
+                 "progress": "float"},
+                "journeystep":
+                {"dimension": "text",
+                 "thing": "text",
+                 "idx": "integer",
+                 "portal": "text"}}
+    primarykeys = {"journey": ("dimension", "thing"),
+                   "journeystep": ("dimension", "thing", "idx")}
+    fkeydict = {"journey":
+                {"dimension, thing": ("thing", "dimension, name")},
+                "journeystep":
+                {"dimension, thing": ("thing", "dimension, name"),
+                 "dimension, portal": ("portal", "dimension, name")}}
+    checks = {"journey": ["progress>=0.0", "progress<1.0"]}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.thing = db.thingdict[rowdict["dimension"]][rowdict["thing"]]
         self.curstep = rowdict["curstep"]
@@ -115,7 +127,7 @@ class Journey:
         self.steplist[idx] = port
 
 
-class Portal:
+class Portal(Saveable):
     # Portals would be called 'exits' if that didn't make it
     # perilously easy to exit the program by mistake. They link
     # one place to another. They are one-way; if you want two-way
@@ -133,31 +145,30 @@ class Portal:
     # will quite often be constant values, because it's not much
     # more work and I expect that it'd cause headaches to be
     # unable to tell whether I'm dealing with a number or not.
-    tabname = "portal"
-    keydecldict = {"dimension": "text",
-                   "name": "text"}
-    valdecldict = {"from_place": "text",
-                   "to_place": "text"}
-    fkeydict = {"dimension, name": ("item", "dimension, name"),
-                "dimension, from_place": ("place", "dimension, name"),
-                "dimension, to_place": ("place", "dimension, name")}
+    coldecls = {"portal":
+                {"dimension": "text",
+                 "name": "text",
+                 "from_place": "text",
+                 "to_place": "text"}}
+    primarykeys = {"portal": ("dimension", "name")}
+    foreignkeys = {"portal":
+                   {"dimension, name": ("item", "dimension, name"),
+                    "dimension, from_place": ("place", "dimension, name"),
+                    "dimension, to_place": ("place", "dimension, name")}}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.name = rowdict["name"]
+        self.hsh = hash(self.dimension + self.name)
         self.dest = db.placedict[self.dimension][rowdict["to_place"]]
         self.orig = db.placedict[self.dimension][rowdict["from_place"]]
-        self.uuid = uuid()
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def __repr__(self):
         return self.name
 
     def __hash__(self):
-        return int(self.uuid)
+        return self.hsh
 
     def get_weight(self):
         return self.weight
@@ -190,13 +201,14 @@ class Portal:
         return self.orig.portals + self.dest.portals
 
 
-class Place:
-    tabname = "place"
-    keydecldict = {"dimension": "text",
-                   "name": "text"}
-    valdecldict = {}
+class Place(Saveable):
+    coldecls = {"place":
+                {"dimension": "text",
+                 "name": "text"}}
+    primarykeys = {"place": ("dimension", "name")}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.dimension = rowdict["dimension"]
         self.contents = []
@@ -231,12 +243,13 @@ class Place:
         return self.name == other.name
 
 
-class Dimension:
-    tabname = "dimension"
-    keydecldict = {"name": "text"}
-    valdecldict = {}
+class Dimension(Saveable):
+    coldecls = {"dimension":
+                {"name": "text"}}
+    primarykeys = {"dimension": ("name",)}
 
-    def __init__(self, rowdict):
+    def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.places = []
         self.portals = []

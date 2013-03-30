@@ -5,6 +5,7 @@ from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
 from graph import Dimension, Journey, Place, Portal
 from pyglet.resource import image
+from saveload import Saveable
 
 
 def start_new_map(nope):
@@ -419,9 +420,6 @@ class DefaultParameters:
         self.table_contents = {
             Dimension: self.dimensions,
             Portal: self.portals,
-            Location: self.locations,
-            Containment: self.containments,
-            JourneyStep: self.steps,
             Journey: self.journeys,
             Place: self.places,
             Menu: self.menus,
@@ -430,7 +428,6 @@ class DefaultParameters:
             Style: self.styles,
             Item: self.places + self.portals + self.things,
             Board: self.boards,
-            BoardMenu: self.boardmenu,
             Img: self.imgs,
             Spot: self.spots,
             Pawn: self.pawns,
@@ -441,127 +438,35 @@ class DefaultParameters:
 ### names. Don't use them
 
 
-class Item:
-    tabname = "item"
-    keydecldict = {"dimension": "text",
-                   "name": "text"}
-    valdecldict = {}
-    fkeydict = {}
+class Item(Saveable):
+    coldecls = {"item":
+                {"dimension": "text",
+                 "name": "text"}}
+    primarykeys = {"item": ("dimension", "name")}
 
 
-class Location:
-    tabname = "location"
-    keydecldict = {"dimension": "text",
-                   "thing": "text"}
-    valdecldict = {"place": "text"}
-    fkeydict = {"dimension, thing": ("thing", "dimension, name"),
-                "dimension, place": ("place", "dimension, name")}
+class Img(Saveable):
+    coldecls = {"img":
+                {"name": "text",
+                 "path": "text",
+                 "rltile": "boolean"}}
+    primarykeys = {"img": ("name",)}
 
-
-class Containment:
-    tabname = "containment"
-    keydecldict = {"dimension": "text",
-                   "contained": "text"}
-    valdecldict = {"container": "text"}
-    fkeydict = {"dimension, contained": ("thing", "dimension, name"),
-                "dimension, container": ("thing", "dimension, name")}
-    checks = ["contained<>container"]
-
-
-class Img:
-    tabname = "img"
-    keydecldict = {"name": "text"}
-    valdecldict = {"path": "text",
-                   "rltile": "boolean"}
-
-
-class BoardMenu:
-    tabname = "boardmenu"
-    keydecldict = {"board": "text",
-                   "menu": "text"}
-    valdecldict = {}
-    fkeydict = {"board": ("board", "dimension"),
-                "menu": ("menu", "name")}
-
-
-class JourneyStep:
-    tabname = "journeystep"
-    keydecldict = {"dimension": "text",
-                   "thing": "text",
-                   "idx": "integer"}
-    valdecldict = {"portal": "text"}
-    fkeydict = {"dimension, thing": ("thing", "dimension, name"),
-                "dimension, portal": ("portal", "dimension, name")}
 
 table_classes = [Dimension,
                  Img,
                  Item,
                  Thing,
-                 Containment,
                  Place,
-                 Location,
                  Portal,
                  Journey,
-                 JourneyStep,
                  Color,
                  Style,
                  MenuItem,
                  Menu,
                  Spot,
                  Pawn,
-                 Board,
-                 BoardMenu]
-
-
-def gentable(clas):
-    tabname = clas.tabname
-    keydict = clas.keydecldict
-    valdict = clas.valdecldict
-    if hasattr(clas, 'fkeydict'):
-        fkeydict = clas.fkeydict
-    else:
-        fkeydict = {}
-    if hasattr(clas, 'checks'):
-        checks = clas.checks
-    else:
-        checks = []
-    keynames = sorted(keydict.iterkeys())
-    valnames = sorted(valdict.iterkeys())
-    colnames = keynames + valnames
-    primarykey = ", ".join(keydict.keys())
-    coldict = {}
-    coldict.update(keydict)
-    coldict.update(valdict)
-    coldecl = [colname + " " + coldict[colname] for colname in colnames]
-    fkeydecl = [
-        "FOREIGN KEY(%s) REFERENCES %s(%s)" % (item[0], item[1][0], item[1][1])
-        for item in fkeydict.iteritems()]
-    checkdecl = [
-        "CHECK(%s)" % chk for chk in checks]
-    pkeydecl = ["PRIMARY KEY(%s)" % primarykey]
-    tabdecl = coldecl + fkeydecl + checkdecl + pkeydecl
-    return (keynames, valnames, colnames,
-            "CREATE TABLE " + tabname + " (" + ", ".join(tabdecl) + ");")
-
-
-for clas in table_classes:
-    (clas.keynames, clas.valnames, clas.colnames, clas.schema) = gentable(clas)
-    clas.key_qm = ", ".join(["?"] * len(clas.keynames))
-    clas.key_qmp = "(" + clas.key_qm + ")"
-    clas.val_qm = ", ".join(["?"] * len(clas.valnames))
-    clas.row_qm = ", ".join(["?"] * len(clas.colnames))
-    clas.row_qmp = "(" + clas.row_qm + ")"
-
-    def keys_qm(self, n):
-        return ", ".join([self.key_qmp] * n)
-    clas.keys_qm = keys_qm
-
-    def rows_qm(self, n):
-        return ", ".join([self.row_qmp] * n)
-    clas.rows_qm = rows_qm
-
-
-table_schemata = [cls.schema for cls in table_classes]
+                 Board]
 
 
 default = DefaultParameters()
@@ -633,6 +538,7 @@ def dicl2tupl(dicl):
         r.append(tuple(l))
     return r
 
+
 def deep_lookup(dic, keylst):
     key = keylst.pop()
     ptr = dic
@@ -689,8 +595,6 @@ class Database:
                         "style": self.styledict,
                         "color": self.colordict,
                         "journey": self.journeydict}
-        for clas in self.dictdict.iterkeys():
-            self.tabdict[clas] = clas.tabname
         self.func = {'toggle_menu_visibility': self.toggle_menu_visibility}
 
     def __del__(self):
@@ -719,8 +623,9 @@ class Database:
             self.xfunc(func)
 
     def mkschema(self):
-        for tab in table_schemata:
-            self.c.execute(tab)
+        for clas in table_classes:
+            for tab in clas.schemata:
+                self.c.execute(tab)
         self.conn.commit()
 
     def initialized(self):

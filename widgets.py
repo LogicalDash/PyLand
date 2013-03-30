@@ -1,10 +1,10 @@
 # This file is for the controllers for the things that show up on the
 # screen when you play.
 import pyglet
-from uuid import uuid1 as uuid
+from saveload import Saveable
 
 
-class Color:
+class Color(Saveable):
     """Color(red=0, green=0, blue=0, alpha=255) => color
 
     This is just a container class for the (red, green, blue, alpha)
@@ -12,18 +12,21 @@ class Color:
     get a particular element by name rather than number.
 
     """
-    tabname = "color"
-    keydecldict = {'name': 'text'}
-    valdecldict = {'red': 'integer not null ',
-                   'green': 'integer not null ',
-                   'blue': 'integer not null ',
-                   'alpha': 'integer default 255 '}
-    checks = ["red between 0 and 255",
+    coldecls = {"color":
+                {'name': 'text',
+                 'red': 'integer not null ',
+                 'green': 'integer not null ',
+                 'blue': 'integer not null ',
+                 'alpha': 'integer default 255 '}}
+    primarykeys = {"color": ("name",)}
+    checks = {"color":
+              ["red between 0 and 255",
               "green between 0 and 255",
               "blue between 0 and 255",
-              "alpha between 0 and 255"]
+              "alpha between 0 and 255"]}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.red = rowdict["red"]
         self.green = rowdict["green"]
@@ -31,10 +34,14 @@ class Color:
         self.alpha = rowdict["alpha"]
         self.tup = (self.red, self.green, self.blue, self.alpha)
         self.pattern = pyglet.image.SolidColorImagePattern(self.tup)
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, Color) and
+            self.name == other.name)
+
+    def __hash__(self):
+        return hash(self.name)
 
     def __iter__(self):
         return iter(self.tup)
@@ -43,20 +50,23 @@ class Color:
         return "(" + ", ".join(self.tup) + ")"
 
 
-class MenuItem:
-    tabname = "menuitem"
-    keydecldict = {'menu': 'text',
-                   'idx': 'integer'}
-    valdecldict = {'text': 'text',
-                   'onclick': 'text',
-                   'onclick_arg': 'text',
-                   'closer': 'boolean',
-                   'visible': 'boolean',
-                   'interactive': 'boolean'}
-    fkeydict = {"menu": ("menu", "name")}
+class MenuItem(Saveable):
+    coldecls = {'menuitem':
+                {'menu': 'text',
+                 'idx': 'integer',
+                 'text': 'text',
+                 'onclick': 'text',
+                 'onclick_arg': 'text',
+                 'closer': 'boolean',
+                 'visible': 'boolean',
+                 'interactive': 'boolean'}}
+    primarykeys = {'menuitem': ('menu', 'idx')}
+    foreignkeys = {'menuitem': {"menu": ("menu", "name")}}
 
-    def __init__(self, db, board, rowdict):
-        self.menu = db.boardmenudict[board][rowdict["menu"]]
+    def __init__(self, db, rowdict, board):
+        Saveable.__init__(db, rowdict)
+        self.menuname = rowdict["menu"]
+        self.menu = db.boardmenudict[board][self.menuname]
         self.idx = rowdict["idx"]
         self.text = rowdict["text"]
         self.onclick_core = db.func[rowdict["onclick"]]
@@ -64,18 +74,16 @@ class MenuItem:
         self.closer = rowdict["closer"]
         self.visible = rowdict["visible"]
         self.interactive = rowdict["interactive"]
-
-    def __iter__(self):
-        return (self.menu.name, self.idx,
-                self.text, self.onclick_core.__name__,
-                self.onclick_arg, self.closer,
-                self.visible, self.interactive)
+        self.hsh = hash(self.menuname + str(self.idx))
 
     def __eq__(self, other):
-        if isinstance(other, str):
-            return self.text == other
-        else:
-            return self.text == other.text
+        return (
+            isinstance(other, MenuItem) and
+            self.menu == other.menu and
+            self.idx == other.idx)
+
+    def __hash__(self):
+        return self.hsh
 
     def __gt__(self, other):
         if isinstance(other, str):
@@ -99,9 +107,6 @@ class MenuItem:
 
     def __repr__(self):
         return self.text
-
-    def __hash__(self):
-        return hash(self.menu.board.dimension + self.menu.name + str(self.idx))
 
     def getcenter(self):
         width = self.getwidth()
@@ -152,19 +157,21 @@ class MenuItem:
             item.toggle_visibility()
 
 
-class Menu:
-    tabname = "menu"
-    keydecldict = {'name': 'text'}
-    valdecldict = {'left': 'float not null',
-                   'bottom': 'float not null',
-                   'top': 'float not null',
-                   'right': 'float not null',
-                   'style': "text default 'Default'",
-                   "main_for_window": "boolean default 0",
-                   "visible": "boolean default 0"}
+class Menu(Saveable):
+    coldecls = {'menu':
+                {'name': 'text',
+                 'left': 'float not null',
+                 'bottom': 'float not null',
+                 'top': 'float not null',
+                 'right': 'float not null',
+                 'style': "text default 'Default'",
+                 "main_for_window": "boolean default 0",
+                 "visible": "boolean default 0"}}
+    primarykeys = {'menu': ('name',)}
     interactive = True
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.left = rowdict["left"]
         self.bottom = rowdict["bottom"]
@@ -183,6 +190,22 @@ class Menu:
         # an attribute called window, and it should be a window of the
         # pyglet kind. It isn't in the constructor because that would
         # make loading inconvenient.
+
+    def __eq__(self, other):
+        if hasattr(self, 'gw'):
+            return (
+                hasattr(other, 'gw') and
+                other.gw == self.gw and
+                other.name == self.name)
+        else:
+            return (
+                other.name == self.name)
+
+    def __hash__(self):
+        if hasattr(self, 'gw'):
+            return hash(self.name) + hash(self.gw)
+        else:
+            return hash(self.name)
 
     def __iter__(self):
         return (self.name, self.left, self.bottom, self.top,
@@ -237,34 +260,40 @@ class CalendarBrick:
         self.end = end
         self.color = color
         self.text = text
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+        self.hsh = hash(str(start) + str(end) + text)
 
-class CalendarSchedule:
-    # mapping the CalendarWalls to the Schedules represented
-    tablename = "calendarschedule"
-    keydecldict = {"calendar": "text",
-                   "schedule": "text"}
-    valdecldict = {"color": "text"}
-    fkeydict = {"calendar": ("calendar", "name"),
-                "schedule": ("schedule", "name"),
-                "color": ("color", "name")}
+    def __eq__(self, other):
+        if not isinstance(other, CalendarBrick):
+            return False
+        return (
+            self.start == other.start and
+            self.end == other.end and
+            self.text == other.text)
 
 
-class CalendarWall:
+class CalendarWall(Saveable):
     # A board may have up to one of these. It may be toggled. It
     # may display any schedule or combination thereof, distinguishing
     # them by color or not at all. It has only one column.
-    tablename = "calendar"
-    keydecldict = {"name": "text"}
-    valdecldict = {"visible": "boolean",
-                   "interactive": "boolean",
-                   "rows_on_screen": "integer",
-                   "scrolled_to": "integer",
-                   "gutter": "integer"}
-    checks = ["rows_on_screen>0", "scrolled_to>=0"]
+    coldecls = {"calendar_wall":
+                {"dimension": "text",
+                 "visible": "boolean",
+                 "interactive": "boolean",
+                 "rows_on_screen": "integer",
+                 "scrolled_to": "integer",
+                 "gutter": "integer"},
+                "calendar_schedule":
+                {"calendar": "text",
+                 "schedule": "text"}}
+    primarykeys = {"calendar_wall": ("dimension",),
+                   "calendar_schedule": ("calendar", "schedule")}
+    foreignkeys = {"calendar_wall":
+                   {"dimension": ("dimension", "name")},
+                   "calendar_schedule":
+                   {"calendar": ("calendar", "name"),
+                    "schedule": ("schedule", "name"),
+                    "color": ("color", "name")}}
+    checks = {"calendar_wall": ["rows_on_screen>0", "scrolled_to>=0"]}
 
     def __init__(self, db, rowdict):
         # TODO pull in schedules.
@@ -276,10 +305,23 @@ class CalendarWall:
         self.screenful = rowdict["rows_on_screen"]
         self.scrolled = rowdict["scrolled_to"]
         self.gutter = rowdict["gutter"]
+        self.hsh = hash(self.dimension)
         self.key = [
             rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
         self.val = [
             rowdict[valname] for valname in self.valdecldict.iterkeys()]
+
+    def __eq__(self, other):
+        # not checking for gw this time, because there can only be one
+        # CalendarWall per Board irrespective of if it's got a window
+        # or not.
+        return (
+            isinstance(other, CalendarWall) and
+            other.dimension == self.dimension)
+
+    def __hash__(self):
+        return self.hsh
+
     def no_window(self):
         raise Exception("I can't do this without a GameWindow. "
                         "Set %s.gw to a GameWindow object." % (self.__name__,))
@@ -311,25 +353,28 @@ class CalendarWall:
         return self.gettop() - self.getbot()
 
 
-class Spot:
+class Spot(Saveable):
     """Controller for the icon that represents a Place.
 
     Spot(place, x, y, spotgraph) => a Spot representing the given
     place; at the given x and y coordinates on the screen; in the
     given graph of Spots. The Spot will be magically connected to the other
     Spots in the same way that the underlying Places are connected."""
-    tabname = "spot"
-    keydecldict = {"dimension": "text",
-                   "place": "text"}
-    valdecldict = {"img": "text",
-                   "x": "integer",
-                   "y": "integer",
-                   "visible": "boolean",
-                   "interactive": "boolean"}
-    fkeydict = {"dimension, place": ("place", "dimension, name"),
-                "img": ("img", "name")}
+    coldecls = {"spot":
+                {"dimension": "text",
+                 "place": "text",
+                 "img": "text",
+                 "x": "integer",
+                 "y": "integer",
+                 "visible": "boolean",
+                 "interactive": "boolean"}}
+    primarykeys = {"spot": ("dimension", "place")}
+    foreignkeys = {"spot":
+                   {"dimension, place": ("place", "dimension, name"),
+                    "img": ("img", "name")}}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.place = db.placedict[self.dimension][rowdict["place"]]
         self.x = rowdict["x"]
@@ -339,16 +384,23 @@ class Spot:
         self.interactive = rowdict["interactive"]
         self.r = self.img.width / 2
         self.grabpoint = None
-        self.uuid = uuid()
+        self.hsh = hash(self.dimension + self.place)
         self.key = [
             rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
         self.val = [
             rowdict[valname] for valname in self.valdecldict.iterkeys()]
+
     def __repr__(self):
         return "spot(%i,%i)->%s" % (self.x, self.y, str(self.place))
 
+    def __eq__(self, other):
+        return (
+            isinstance(other, Spot) and
+            self.dimension == other.dimension and
+            self.name == other.name)
+
     def __hash__(self):
-        return int(self.uuid)
+        return self.hsh
 
     def getleft(self):
         return self.x - self.r
@@ -388,7 +440,7 @@ class Spot:
         self.y = y - graby + dy
 
 
-class Pawn:
+class Pawn(Saveable):
     """A token to represent something that moves about between Places.
 
     Pawn(thing, place, x, y) => pawn
@@ -403,26 +455,42 @@ class Pawn:
     nebulous dimension between Places.
 
     """
-    tabname = "pawn"
-    keydecldict = {"dimension": "text",
-                   "thing": "text"}
-    valdecldict = {"img": "text",
-                   "visible": "boolean",
-                   "interactive": "boolean"}
-    fkeydict = {"img": ("img", "name"),
-                "dimension, thing": ("thing", "dimension, name")}
+    coldecls = {"pawn":
+                {"dimension": "text",
+                 "thing": "text",
+                 "img": "text",
+                 "visible": "boolean",
+                 "interactive": "boolean"}}
+    primarykeys = {"pawn": ("dimension", "thing")}
+    fkeydict = {"pawn":
+                {"img": ("img", "name"),
+                 "dimension, thing": ("thing", "dimension, name")}}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
-        self.thing = db.thingdict[self.dimension][rowdict["thing"]]
+        self.thingname = rowdict["thing"]
+        self.thing = db.thingdict[self.dimension][self.thingname]
         self.img = db.imgdict[rowdict["img"]]
         self.visible = rowdict["visible"]
         self.interactive = rowdict["interactive"]
         self.r = self.img.width / 2
+        self.hsh = hash(self.dimension + self.thing)
         self.key = [
             rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
+        self.keystr = self.dimension + self.thingname
         self.val = [
             rowdict[valname] for valname in self.valdecldict.iterkeys()]
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, Pawn) and
+            self.dimension == other.dimension and
+            self.thingname == other.thingname)
+
+    def __hash__(self):
+        return self.hsh
+
     def getcoords(self):
         # Assume I've been provided a spotdict. Use it to get the
         # spot's x and y, as well as that of the spot for the next
@@ -482,16 +550,26 @@ class Pawn:
         pass
 
 
-class Board:
-    tabname = "board"
-    keydecldict = {"dimension": "text"}
-    valdecldict = {"width": "integer",
-                   "height": "integer",
-                   "wallpaper": "text"}
-    fkeydict = {"dimension": ("dimension", "name"),
-                "wallpaper": ("image", "name")}
+class Board(Saveable):
+    coldecls = {"board":
+                {"dimension": "text",
+                 "width": "integer",
+                 "height": "integer",
+                 "wallpaper": "text"},
+                "boardmenu":
+                {"board": "text",
+                 "menu": "text"}}
+    primarykeys = {"board": ("dimension",),
+                   "boardmenu": ("board", "menu")}
+    foreignkeys = {"board":
+                   {"dimension": ("dimension", "name"),
+                    "wallpaper": ("image", "name")},
+                   "boardmenu":
+                   {"board": ("board", "name"),
+                    "menu": ("menu", "name")}}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.width = rowdict["width"]
         self.height = rowdict["height"]
@@ -499,6 +577,15 @@ class Board:
         self.spots = db.spotdict[self.dimension].viewvalues()
         self.pawns = db.pawndict[self.dimension].viewvalues()
         self.menus = db.boardmenudict[self.dimension].viewvalues()
+        self.hsh = hash(self.dimension)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, Board) and
+            self.dimension == other.dimension)
+
+    def __hash__(self):
+        return self.hsh
 
     def getwidth(self):
         return self.width
@@ -513,23 +600,27 @@ class Board:
                len(self.pawns), len(self.menus))
 
 
-class Style:
-    tabname = "style"
-    keydecldict = {"name": "text"}
-    valdecldict = {"fontface": "text not null",
-                   "fontsize": "integer not null",
-                   "spacing": "integer default 6",
-                   "bg_inactive": "text not null",
-                   "bg_active": "text not null",
-                   "fg_inactive": "text not null",
-                   "fg_active": "text not null"}
-    fkeydict = {"bg_inactive": ("color", "name"),
-                "bg_active": ("color", "name"),
-                "fg_inactive": ("color", "name"),
-                "fg_active": ("color", "name")}
+class Style(Saveable):
+    coldecls = {"style":
+                {"name": "text",
+                 "fontface": "text not null",
+                 "fontsize": "integer not null",
+                 "spacing": "integer default 6",
+                 "bg_inactive": "text not null",
+                 "bg_active": "text not null",
+                 "fg_inactive": "text not null",
+                 "fg_active": "text not null"}}
+    primarykeys = {"style": ("name",)}
+    foreignkeys = {"style":
+                   {"bg_inactive": ("color", "name"),
+                    "bg_active": ("color", "name"),
+                    "fg_inactive": ("color", "name"),
+                    "fg_active": ("color", "name")}}
 
     def __init__(self, db, rowdict):
+        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
+        self.hsh = hash(self.name)
         self.fontface = rowdict["fontface"]
         self.fontsize = rowdict["fontsize"]
         self.spacing = rowdict["spacing"]
@@ -537,7 +628,11 @@ class Style:
         self.bg_active = db.colordict[rowdict["bg_active"]]
         self.fg_inactive = db.colordict[rowdict["fg_inactive"]]
         self.fg_active = db.colordict[rowdict["fg_active"]]
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, Style) and
+            self.name == other.name)
+
+    def __hash__(self):
+        return self.hsh
