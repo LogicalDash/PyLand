@@ -1,8 +1,11 @@
 import igraph
-from saveload import Saveable
+from saveload import SaveableMetaclass
 
 
-class Journey(Saveable):
+__metaclass__ = SaveableMetaclass
+
+
+class Journey:
     """Series of steps taken by a Thing to get to a Place.
 
     Journey(traveller, destination, steps) => journey
@@ -48,16 +51,11 @@ class Journey(Saveable):
     checks = {"journey": ["progress>=0.0", "progress<1.0"]}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.thing = db.thingdict[rowdict["dimension"]][rowdict["thing"]]
         self.curstep = rowdict["curstep"]
         self.progress = rowdict["progress"]
         self.steplist = []
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
 
     def steps(self):
         """Get the number of steps in the Journey.
@@ -127,7 +125,7 @@ class Journey(Saveable):
         self.steplist[idx] = port
 
 
-class Portal(Saveable):
+class Portal:
     # Portals would be called 'exits' if that didn't make it
     # perilously easy to exit the program by mistake. They link
     # one place to another. They are one-way; if you want two-way
@@ -157,15 +155,11 @@ class Portal(Saveable):
                     "dimension, to_place": ("place", "dimension, name")}}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.name = rowdict["name"]
         self.hsh = hash(self.dimension + self.name)
         self.dest = db.placedict[self.dimension][rowdict["to_place"]]
         self.orig = db.placedict[self.dimension][rowdict["from_place"]]
-
-    def __repr__(self):
-        return self.name
 
     def __hash__(self):
         return self.hsh
@@ -201,65 +195,37 @@ class Portal(Saveable):
         return self.orig.portals + self.dest.portals
 
 
-class Place(Saveable):
+class Place:
     coldecls = {"place":
                 {"dimension": "text",
                  "name": "text"}}
     primarykeys = {"place": ("dimension", "name")}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
-        self.name = rowdict["name"]
-        self.dimension = rowdict["dimension"]
+        self.db = db
+        self.rowdict = rowdict
+        self.name = self.rowdict["name"]
+        self.dimension = self.rowdict["dimension"]
         self.contents = []
         self.portals = []
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
-
-    def __iter__(self):
-        return [
-            ("dimension", self.dimension),
-            ("name", self.name)]
-
-    def __repr__(self):
-        return self.name
-
-    def addthing(self, item):
-        for test in self.entrytests:
-            if not test(item):
-                return
-        self.contents.append(item)
-
-    def rmitem(self, item):
-        self.contents.remove(item)
-
-    def __getitem__(self, key):
-        return self.att[key]
 
     def __eq__(self, other):
-        # The name is the key in the database. Must be unique.
-        return self.name == other.name
+        if not isinstance(other, Place):
+            return False
+        else:
+            # The name is the key in the database. Must be unique.
+            return self.name == other.name
 
 
-class Dimension(Saveable):
+class Dimension:
     coldecls = {"dimension":
                 {"name": "text"}}
     primarykeys = {"dimension": ("name",)}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.places = []
         self.portals = []
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
-
-    def __str__(self):
-        return "(" + self.name + ")"
 
     def add_place(self, place):
         self.places.append(place)
@@ -298,3 +264,161 @@ class Dimension(Saveable):
 
     def get_igraph_layout(self, layout_type):
         return self.get_igraph_graph().layout(layout=layout_type)
+
+
+class Thing:
+    coldecls = {"thing":
+                {"dimension": "text",
+                 "name": "text"},
+                "location":
+                {"dimension": "text",
+                 "thing": "text",
+                 "place": "text"},
+                "containment":
+                {"dimension": "text",
+                 "contained": "text",
+                 "container": "text"},
+                "thing_kind":
+                {"name": "text"},
+                "thing_kind_link":
+                {"thing": "text",
+                 "kind": "text"}}
+    primarykeys = {"thing": ("dimension", "name"),
+                   "location": ("dimension", "thing"),
+                   "containment": ("dimension", "contained"),
+                   "thing_kind": ("name",),
+                   "thing_kind_link": ("thing", "kind")}
+    foreignkeys = {"thing":
+                   {"dimension": ("dimension", "name")},
+                   "location":
+                   {"dimension": ("dimension", "name"),
+                    "dimension, thing": ("thing", "dimension, name"),
+                    "dimension, place": ("place", "dimension, name")},
+                   "containment":
+                   {"dimension": ("dimension", "name"),
+                    "dimension, contained": ("thing", "dimension, name"),
+                    "dimension, container": ("thing", "dimension, name")},
+                   "thing_kind_link":
+                   {"thing": ("thing", "name"),
+                    "kind": ("thing_kind", "name")}}
+    checks = {"containment": ["contained<>container"]}
+
+    def __init__(self, db, rowdict):
+        self.dimension = rowdict["dimension"]
+        self.name = rowdict["name"]
+        self.location = None
+        self.contents = []
+        self.permissions = []
+        self.forbiddions = []
+        self.permit_inspections = []
+        self.forbid_inspections = []
+
+
+    def __str__(self):
+        return "(%s, %s)" % (self.dimension, self.name)
+
+    def __iter__(self):
+        return (self.dimension, self.name)
+
+    def __repr__(self):
+        if self.location is None:
+            loc = "nowhere"
+        else:
+            loc = str(self.location)
+        return self.name + "@" + loc
+
+    def add_item(self, it):
+        if it in self.cont:
+            return False
+        elif self.permitted(it):
+            self.cont.append(it)
+            return True
+        elif self.forbidden(it):
+            return False
+        elif self.can_contain(it):
+            self.cont.append(it)
+            return True
+        else:
+            return False
+
+    def permit_item(self, it):
+        self.forbiddions.remove(it)
+        self.permissions.append(it)
+
+    def forbid_item(self, it):
+        self.permissions.remove(it)
+        self.forbiddions.append(it)
+
+
+class ThingKind:
+    """A category to which a Thing may belong. Any Thing may belong to any
+number of ThingKinds."""
+    tablename = "thing_kind"
+    keydecldict = {"name": "text"}
+
+
+class ThingKindMember:
+    tablename = "thing_kind_member"
+    keydecldict = {"thing": "text",
+                   "kind": "text"}
+# TODO: methods of Thing to get instances of those classes and inspect
+# items who want to enter to make sure they pass.
+#
+# TODO: subclasses of thing to differentiate between things and other things
+
+
+class Event:
+    """Abstract class for things that can happen. Normally represented as
+cards.
+
+Events are kept in EventDecks, which are in turn contained by
+Characters. When something happens involving one or more characters,
+the relevant EventDecks from the participating Characters will be put
+together into an AttemptDeck. One card will be drawn from this, called
+the attempt card. It will identify what kind of EventDeck should be
+taken from the participants and compiled in the same manner into an
+OutcomeDeck. From this, the outcome card will be drawn.
+
+The effects of an event are determined by both the attempt card and
+the outcome card. An attempt card might specify that only favorable
+outcomes should be put into the OutcomeDeck; the attempt card might
+therefore count itself for a success card. But further, success cards
+may have their own effects irrespective of what particular successful
+outcome occurs. This may be used, for instance, to model that kind of
+success that strains a person terribly and causes them injury.
+
+    """
+    coldecls = {"event":
+                {"name": "text",
+                 "type": "text"},
+                "event_effect":
+                {"name": "text",
+                 "func": "text"},
+                "event_effect_link":
+                {"event": "text",
+                 "effect": "text"},
+                "event_req_thing":
+                {"event": "text",
+                 "dimension": "text",
+                 "thing": "text"},
+                "event_req_thing_kind":
+                {"event": "text",
+                 "kind": "text"}}
+    primarykeys = {"event": ("name",),
+                   "event_effect": ("name", "func"),
+                   "event_effect_link": ("event", "effect"),
+                   "event_req_thing": ("event", "thing"),
+                   "event_req_thing_kind": ("event", "kind")}
+    foreignkeys = {"event_effect_link":
+                   {"event": ("event", "name"),
+                    "effect": ("effect", "name")},
+                   "event_req_thing":
+                   {"event": ("event", "name"),
+                    "dimension, thing": ("thing", "dimension, name")},
+                   "event_req_thing_kind":
+                   {"event": ("event", "name"),
+                    "kind": ("thing_kind", "name")}}
+
+    def __init__(self):
+        if self.__class__ is Event:
+            raise Exception("Strictly abstract class")

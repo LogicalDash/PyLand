@@ -5,7 +5,7 @@ from widgets import Color, MenuItem, Menu, Spot, Pawn, Board, Style
 from thing import Thing
 from graph import Dimension, Journey, Place, Portal
 from pyglet.resource import image
-from saveload import Saveable
+from saveload import SaveableMetaclass
 
 
 def start_new_map(nope):
@@ -126,8 +126,7 @@ def reciprocal_pairs(pairs):
 
 
 class DefaultParameters:
-    def addstub(self, stub):
-        exec('def %s():\n\tpass\n\nself.stubs["%s"]=%s' % (stub, stub, stub))
+    commit = True
 
     def __init__(self):
         self.dimensions = [{"name": "Physical"}]
@@ -270,6 +269,7 @@ class DefaultParameters:
                     'name': name}
 
         self.places = [mkitemd('Physical', p) for p in placenames]
+
         rpos = [('myroom', 'guestroom'),
                 ('myroom', 'mybathroom'),
                 ('myroom', 'outside'),
@@ -357,7 +357,7 @@ class DefaultParameters:
                     "contained": contained,
                     "container": container}
 
-        self.containments = []
+        self.containment = []
 
         def mkboardd(dimension, width, height, wallpaper):
             return {"dimension": dimension,
@@ -417,40 +417,53 @@ class DefaultParameters:
                     ('Physical', 'mom', 'zruty', True, True)]
         self.pawns = [mkpawnd(*tup) for tup in pawntups]
 
-        self.table_contents = {
-            Dimension: self.dimensions,
-            Portal: self.portals,
-            Journey: self.journeys,
-            Place: self.places,
-            Menu: self.menus,
-            MenuItem: self.menuitems,
-            Color: self.colors,
-            Style: self.styles,
-            Item: self.places + self.portals + self.things,
-            Board: self.boards,
-            Img: self.imgs,
-            Spot: self.spots,
-            Pawn: self.pawns,
-            Thing: self.things}
+        portitem = []
+        for port in self.portals:
+            rd = {}
+            rd["name"] = port["name"]
+            rd["dimension"] = port["dimension"]
+            portitem.append(rd)
 
+        self.items = self.places + self.things + portitem
+
+        self.tabdicts = {
+            Dimension: {"dimension": self.dimensions},
+            Item: {"item": self.items},
+            Place: {"place": self.places},
+            Portal: {"portal": self.portals},
+            Thing: {"thing": self.things,
+                    "location": self.locations,
+                    "containment": self.containment},
+            Menu: {"menu": self.menus},
+            MenuItem: {"menuitem": self.menuitems},
+            Color: {"color": self.colors},
+            Style: {"style": self.styles},
+            Img: {"img": self.imgs},
+            Spot: {"spot": self.spots},
+            Pawn: {"pawn": self.pawns},
+            Journey: {"journey": self.journeys,
+                      "journeystep": self.steps},
+            Board: {"board": self.boards}}
 
 ### These classes are just here to give a nice place to look up column
 ### names. Don't use them
 
 
-class Item(Saveable):
+class Item:
     coldecls = {"item":
                 {"dimension": "text",
                  "name": "text"}}
     primarykeys = {"item": ("dimension", "name")}
+    __metaclass__ = SaveableMetaclass
 
 
-class Img(Saveable):
+class Img:
     coldecls = {"img":
                 {"name": "text",
                  "path": "text",
                  "rltile": "boolean"}}
     primarykeys = {"img": ("name",)}
+    __metaclass__ = SaveableMetaclass
 
 
 table_classes = [Dimension,
@@ -474,8 +487,6 @@ default = DefaultParameters()
 
 sys.path.append(os.curdir)
 
-defaultCommit = True
-
 
 def untuple(list_o_tups):
     r = []
@@ -483,13 +494,6 @@ def untuple(list_o_tups):
         for val in tup:
             r.append(val)
     return r
-
-
-def genselect_wherein(colnames, keynames, keynames_in):
-    return ("SELECT " + ", ".join(["?"] * len(colnames)) +
-            "FROM ? WHERE (" +
-            ", ".join(["?"] * len(keynames)) + ") IN (" +
-            ", ".join(questionmarks(keynames_in)) + ")")
 
 
 def dictify_row(row, colnames):
@@ -519,14 +523,6 @@ def dictify_rows(rows, keynames, colnames):
     return r
 
 
-def questionmarks(list_o_tups):
-    tupsize = len(list_o_tups[0])
-    q = ", ".join(["?"] * tupsize)
-    if tupsize > 1:
-        q = "(" + q + ")"
-    return [q] * tupsize
-
-
 def dicl2tupl(dicl):
     # Converts list of dicts with one set of keys to list of tuples of
     # *values only*, not keys. They'll be in the same order as given
@@ -546,6 +542,18 @@ def deep_lookup(dic, keylst):
         ptr = ptr[key]
         key = keylst.pop()
     return ptr[key]
+
+
+def compile_tabdicts(objs):
+    tabdicts = [o.tabdict for o in objs]
+    mastertab = {}
+    for tabdict in tabdicts:
+        for item in tabdict.iteritems():
+            (tabname, rowdict) = item
+            if tabname not in mastertab:
+                mastertab[tabname] = []
+            mastertab[tabname].append(rowdict)
+    return mastertab
 
 
 class Database:
@@ -602,25 +610,112 @@ class Database:
         self.conn.commit()
         self.conn.close()
 
-    def insert_dicl(self, tabclas, dicl):
-        # Takes a table class and a list of dictionaries, which are
-        # assumed to have keys that are the column names of the given
-        # table. Inserts the values given in the dictionarylist into
-        # the table.
-        coln = tabclas.colnames
-        valtups = []
-        for dic in dicl:
-            row = [dic[colnam] for colnam in coln]
-            valtups.append(tuple(row))
-        qrystr = "INSERT INTO %s VALUES (%s);" % (
-            tabclas.tabname, ", ".join(["?"] * len(coln)))
-        self.c.executemany(qrystr, valtups)
-
     def insert_defaults(self):
-        for pair in default.table_contents.iteritems():
-            self.insert_dicl(*pair)
+        for clas in table_classes:
+            tabdict = default.tabdicts[clas]
+            for item in tabdict.iteritems():
+                (tabname, rowdicts) = item
+                self.insert_rowdict_table(rowdicts, clas, tabname)
         for func in default.funcs:
             self.xfunc(func)
+
+    def insert_rowdict_table(self, rowdict, clas, tablename):
+        if rowdict != []:
+            clas.dbop['insert'](self, rowdict, tablename)
+
+    def delete_keydict_table(self, keydict, clas, tablename):
+        if keydict != []:
+            clas.dbop['delete'](self, keydict, tablename)
+
+    def detect_keydict_table(self, keydict, clas, tablename):
+        if keydict != []:
+            return clas.dbop['detect'](self, keydict, tablename)
+        else:
+            return []
+
+    def missing_keydict_table(self, keydict, clas, tablename):
+        if keydict != []:
+            return clas.dbop['missing'](self, keydict, tablename)
+        else:
+            return []
+
+    def insert_obj_table(self, obj, tablename):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        rowdicts = [o.tabdict[tablename] for o in objs]
+        self.insert_rowdict_table(rowdicts, objs[0], tablename)
+
+    def delete_obj_table(self, obj, tablename):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        rowdicts = [o.tabdict[tablename] for o in objs]
+        self.delete_keydict_table(rowdicts, objs[0], tablename)
+
+    def detect_obj_table(self, obj, tablename):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        rowdicts = [o.tabdict[tablename] for o in objs]
+        return self.detect_keydict_table(rowdicts, objs[0], tablename)
+
+    def missing_obj_table(self, obj, tablename):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        rowdicts = [o.tabdict[tablename] for o in objs]
+        return self.missing_keydict_table(rowdicts, objs[0], tablename)
+
+    def insert_obj(self, obj):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        clas = objs[0].__class__
+        mastertab = compile_tabdicts(objs)
+        for tabname in mastertab.iterkeys():
+            self.insert_rowdict_table(mastertab[tabname], clas, tabname)
+
+    def delete_obj(self, obj):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        clas = objs[0].__class__
+        mastertab = compile_tabdicts(objs)
+        for tabname in mastertab.iterkeys():
+            self.delete_keydict_table(mastertab[tabname], clas, tabname)
+
+    def detect_obj(self, obj):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        clas = objs[0].__class__
+        mastertab = compile_tabdicts(objs)
+        r = []
+        for tabname in mastertab.iterkeys():
+            r.extend(self.detect_keydict_table(
+                mastertab[tabname], clas, tabname))
+        return r
+
+    def missing_obj(self, obj):
+        if isinstance(obj, list):
+            objs = obj
+        else:
+            objs = [obj]
+        clas = objs[0].__class__
+        mastertab = compile_tabdicts(objs)
+        r = []
+        for tabname in mastertab.iterkeys():
+            r.extend(self.missing_keydict_table(
+                mastertab[tabname], clas, tabname))
+        return r
 
     def mkschema(self):
         for clas in table_classes:
@@ -647,69 +742,72 @@ class Database:
         # I'll be fetching all the *rows* I need, then turning them
         # into Python objects, starting with the ones that don't have
         # foreign keys.
-        def genselect(clas):
-            return ("SELECT " + ", ".join(clas.colnames) +
-                    " FROM " + clas.tabname + " WHERE dimension=?")
+        def genselect(clas, tab):
+            tabcol = clas.colnames[tab]
+            return ("SELECT " + ", ".join(tabcol) +
+                    " FROM " + tab + " WHERE dimension=?")
         # fetch all the place rows
-        qrystr = genselect(Place)
+        qrystr = genselect(Place, "place")
         qrytup = (dimension,)
         self.c.execute(qrystr, qrytup)
         place_rows = self.c.fetchall()
         place_rowdicts = [
-            dictify_row(row, Place.colnames)
+            dictify_row(row, Place.colnames["place"])
             for row in place_rows]
         # fetch all the thing rows
-        qrystr = genselect(Thing)
+        qrystr = genselect(Thing, "thing")
         self.c.execute(qrystr, qrytup)
         thing_rows = self.c.fetchall()
         thing_rowdicts = [
-            dictify_row(row, Thing.colnames)
+            dictify_row(row, Thing.colnames["thing"])
             for row in thing_rows]
         # fetch all the portal rows
-        qrystr = genselect(Portal)
+        qrystr = genselect(Portal, "portal")
         self.c.execute(qrystr, qrytup)
         portal_rows = self.c.fetchall()
         portal_rowdicts = [
-            dictify_row(row, Portal.colnames)
+            dictify_row(row, Portal.colnames["portal"])
             for row in portal_rows]
         # fetch all containment rows
-        qrystr = genselect(Containment)
+        qrystr = genselect(Thing, "containment")
         self.c.execute(qrystr, qrytup)
         containment_rows = self.c.fetchall()
         containment_rowdicts = [
-            dictify_row(row, Containment.colnames)
+            dictify_row(row, Thing.colnames["containment"])
             for row in containment_rows]
         # fetch all location rows
-        qrystr = genselect(Location)
+        qrystr = genselect(Thing, "location")
         self.c.execute(qrystr, qrytup)
         location_rows = self.c.fetchall()
         location_rowdicts = [
-            dictify_row(row, Location.colnames)
+            dictify_row(row, Thing.colnames["location"])
             for row in location_rows]
         # fetch all journey step rows
-        qrystr = genselect(JourneyStep)
+        qrystr = genselect(Journey, "journeystep")
         self.c.execute(qrystr, qrytup)
         journey_step_rows = self.c.fetchall()
         journey_step_rowdicts = [
-            dictify_row(row, JourneyStep.colnames)
+            dictify_row(row, Journey.colnames["journeystep"])
             for row in journey_step_rows]
         # fetch all journey rows
-        qrystr = genselect(Journey)
+        qrystr = genselect(Journey, "journey")
         self.c.execute(qrystr, qrytup)
         journey_rows = self.c.fetchall()
         journey_rowdicts = [
-            dictify_row(row, Journey.colnames)
+            dictify_row(row, Journey.colnames["journey"])
             for row in journey_rows]
         # fetch all spot rows
-        qrystr = genselect(Spot)
+        qrystr = genselect(Spot, "spot")
         self.c.execute(qrystr, qrytup)
         spot_rows = self.c.fetchall()
-        spot_rowdicts = [dictify_row(row, Spot.colnames) for row in spot_rows]
+        spot_rowdicts = [dictify_row(row, Spot.colnames["spot"])
+                         for row in spot_rows]
         # fetch all pawn rows
-        qrystr = genselect(Pawn)
+        qrystr = genselect(Pawn, "pawn")
         self.c.execute(qrystr, qrytup)
         pawn_rows = self.c.fetchall()
-        pawn_rowdicts = [dictify_row(row, Pawn.colnames) for row in pawn_rows]
+        pawn_rowdicts = [dictify_row(row, Pawn.colnames["pawn"])
+                         for row in pawn_rows]
         # Dimension is no longer an adequate key; stop using genselect
 
         # find out what menus this board has
@@ -718,64 +816,66 @@ class Database:
         menutups = self.c.fetchall()
         menunames = [tup[0] for tup in menutups]
         # load them
-        qrystr = ("SELECT " + ", ".join(Menu.colnames) +
+        qrystr = ("SELECT " + ", ".join(Menu.colnames["menu"]) +
                   " FROM menu WHERE name IN (" +
                   ", ".join(["?"] * len(menunames)) + ")")
         qrytup = tuple(menunames)
         self.c.execute(qrystr, qrytup)
         menu_rows = self.c.fetchall()
-        menu_rowdicts = [dictify_row(row, Menu.colnames) for row in menu_rows]
+        menu_rowdicts = [dictify_row(row, Menu.colnames["menu"])
+                         for row in menu_rows]
         # load the menus' items
-        qrystr = ("SELECT " + ", ".join(MenuItem.colnames) +
+        qrystr = ("SELECT " + ", ".join(MenuItem.colnames["menuitem"]) +
                   " FROM menuitem WHERE menu IN (" +
                   ", ".join(["?"] * len(menunames)) + ")")
         self.c.execute(qrystr, qrytup)
         menu_item_rows = self.c.fetchall()
-        menu_item_rowdicts = [dictify_row(row, MenuItem.colnames)
+        menu_item_rowdicts = [dictify_row(row, MenuItem.colnames["menuitem"])
                               for row in menu_item_rows]
         stylenames = [rowdict["style"] for rowdict in menu_rowdicts]
         # load the styles in the menus
-        qrystr = ("SELECT " + ", ".join(Style.colnames) +
+        qrystr = ("SELECT " + ", ".join(Style.colnames["style"]) +
                   " FROM style WHERE name IN (" +
                   ", ".join(["?"] * len(stylenames)) + ")")
         qrytup = tuple(stylenames)
         self.c.execute(qrystr, qrytup)
         style_rows = self.c.fetchall()
         # load the colors in the styles
-        style_rowdicts = [dictify_row(row, Style.colnames)
+        style_rowdicts = [dictify_row(row, Style.colnames["style"])
                           for row in style_rows]
         colornames = []
         for rowdict in style_rowdicts:
             colornames.extend([rowdict["bg_inactive"], rowdict["bg_active"],
                                rowdict["fg_inactive"], rowdict["fg_active"]])
         # load the colors
-        qrystr = ("SELECT " + ", ".join(Color.colnames) +
+        qrystr = ("SELECT " + ", ".join(Color.colnames["color"]) +
                   " FROM color WHERE name IN (" +
                   ", ".join(["?"] * len(colornames)) + ")")
         qrytup = tuple(colornames)
         self.c.execute(qrystr, qrytup)
         color_rows = self.c.fetchall()
         color_rowdicts = [
-            dictify_row(row, Color.colnames)
+            dictify_row(row, Color.colnames["color"])
             for row in color_rows]
         # load the imgs
         imgs2load = set()
-        qrystr = genselect(Board)
+        qrystr = genselect(Board, "board")
         self.c.execute(qrystr, (dimension,))
-        board_rowdict = dictify_row(self.c.fetchone(), Board.colnames)
+        board_rowdict = dictify_row(self.c.fetchone(), Board.colnames["board"])
         imgs2load.add(board_rowdict["wallpaper"])
         for row in spot_rowdicts:
             imgs2load.add(row["img"])
         for row in pawn_rowdicts:
             imgs2load.add(row["img"])
         imgnames = list(imgs2load)
-        qrystr = ("SELECT " + ", ".join(Img.colnames) +
+        qrystr = ("SELECT " + ", ".join(Img.colnames["img"]) +
                   " FROM img WHERE name IN (" +
                   ", ".join(["?"] * len(imgnames)) + ")")
         qrytup = tuple(imgnames)
         self.c.execute(qrystr, qrytup)
         img_rows = self.c.fetchall()
-        img_rowdicts = [dictify_row(row, Img.colnames) for row in img_rows]
+        img_rowdicts = [dictify_row(row, Img.colnames["img"])
+                        for row in img_rows]
         for row in img_rowdicts:
             if row["rltile"]:
                 self.load_rltile(row["name"], row["path"])
@@ -795,7 +895,7 @@ class Database:
             menu = Menu(self, row)
             self.boardmenudict[dimension][row["name"]] = menu
         for row in menu_item_rowdicts:
-            menuitem = MenuItem(self, dimension, row)
+            menuitem = MenuItem(self, row, dimension)
             menu = self.boardmenudict[dimension][row["menu"]]
             while row["idx"] >= len(menu.items):
                 menu.items.append(None)
@@ -951,7 +1051,7 @@ disk.
         knownobjs = {}
         for item in knowndict.iteritems():
             (tabname, rows) = item
-            knownobjs[tabname] = set(objlst)
+            knownobjs[tabname] = set(rows)
         # Get changed objects for each table. For this I need only
         # consider objects that are known.
         changeddict = {}

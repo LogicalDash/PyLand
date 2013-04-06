@@ -1,14 +1,17 @@
 # This file is for the controllers for the things that show up on the
 # screen when you play.
 import pyglet
-from saveload import Saveable
+from saveload import SaveableMetaclass
 
 
-class Color(Saveable):
+__metaclass__ = SaveableMetaclass
+
+
+class Color:
     """Color(red=0, green=0, blue=0, alpha=255) => color
 
     This is just a container class for the (red, green, blue, alpha)
-tuples that Pyglet uses to identify colors. 
+tuples that Pyglet uses to identify colors.
 
     """
     coldecls = {"color":
@@ -25,7 +28,6 @@ tuples that Pyglet uses to identify colors.
               "alpha between 0 and 255"]}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.red = rowdict["red"]
         self.green = rowdict["green"]
@@ -49,7 +51,7 @@ tuples that Pyglet uses to identify colors.
         return "(" + ", ".join(self.tup) + ")"
 
 
-class MenuItem(Saveable):
+class MenuItem:
     coldecls = {'menuitem':
                 {'menu': 'text',
                  'idx': 'integer',
@@ -63,7 +65,6 @@ class MenuItem(Saveable):
     foreignkeys = {'menuitem': {"menu": ("menu", "name")}}
 
     def __init__(self, db, rowdict, board):
-        Saveable.__init__(db, rowdict)
         self.menuname = rowdict["menu"]
         self.menu = db.boardmenudict[board][self.menuname]
         self.idx = rowdict["idx"]
@@ -156,7 +157,7 @@ class MenuItem(Saveable):
             item.toggle_visibility()
 
 
-class Menu(Saveable):
+class Menu:
     coldecls = {'menu':
                 {'name': 'text',
                  'left': 'float not null',
@@ -170,7 +171,6 @@ class Menu(Saveable):
     interactive = True
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.left = rowdict["left"]
         self.bottom = rowdict["bottom"]
@@ -273,7 +273,7 @@ class CalendarBrick:
         return self.hsh
 
 
-class CalendarWall(Saveable):
+class CalendarWall:
     # A board may have up to one of these. It may be toggled. It
     # may display any schedule or combination thereof, distinguishing
     # them by color or not at all. It has only one column.
@@ -356,7 +356,7 @@ class CalendarWall(Saveable):
         return self.gettop() - self.getbot()
 
 
-class Spot(Saveable):
+class Spot:
     """Controller for the icon that represents a Place.
 
     Spot(place, x, y, spotgraph) => a Spot representing the given
@@ -377,7 +377,6 @@ class Spot(Saveable):
                     "img": ("img", "name")}}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.place = db.placedict[self.dimension][rowdict["place"]]
         self.x = rowdict["x"]
@@ -387,11 +386,7 @@ class Spot(Saveable):
         self.interactive = rowdict["interactive"]
         self.r = self.img.width / 2
         self.grabpoint = None
-        self.hsh = hash(self.dimension + self.place)
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+        self.hsh = hash(self.dimension + self.place.name)
 
     def __repr__(self):
         return "spot(%i,%i)->%s" % (self.x, self.y, str(self.place))
@@ -443,7 +438,7 @@ class Spot(Saveable):
         self.y = y - graby + dy
 
 
-class Pawn(Saveable):
+class Pawn:
     """A token to represent something that moves about between Places.
 
     Pawn(thing, place, x, y) => pawn
@@ -470,7 +465,6 @@ class Pawn(Saveable):
                  "dimension, thing": ("thing", "dimension, name")}}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.thingname = rowdict["thing"]
         self.thing = db.thingdict[self.dimension][self.thingname]
@@ -478,12 +472,7 @@ class Pawn(Saveable):
         self.visible = rowdict["visible"]
         self.interactive = rowdict["interactive"]
         self.r = self.img.width / 2
-        self.hsh = hash(self.dimension + self.thing)
-        self.key = [
-            rowdict[keyname] for keyname in self.keydecldict.iterkeys()]
-        self.keystr = self.dimension + self.thingname
-        self.val = [
-            rowdict[valname] for valname in self.valdecldict.iterkeys()]
+        self.hsh = hash(self.dimension + self.thing.name)
 
     def __eq__(self, other):
         return (
@@ -553,7 +542,7 @@ class Pawn(Saveable):
         pass
 
 
-class Board(Saveable):
+class Board:
     coldecls = {"board":
                 {"dimension": "text",
                  "width": "integer",
@@ -572,7 +561,6 @@ class Board(Saveable):
                     "menu": ("menu", "name")}}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.dimension = rowdict["dimension"]
         self.width = rowdict["width"]
         self.height = rowdict["height"]
@@ -603,7 +591,7 @@ class Board(Saveable):
                len(self.pawns), len(self.menus))
 
 
-class Style(Saveable):
+class Style:
     coldecls = {"style":
                 {"name": "text",
                  "fontface": "text not null",
@@ -621,7 +609,6 @@ class Style(Saveable):
                     "fg_active": ("color", "name")}}
 
     def __init__(self, db, rowdict):
-        Saveable.__init__(db, rowdict)
         self.name = rowdict["name"]
         self.hsh = hash(self.name)
         self.fontface = rowdict["fontface"]
